@@ -1,7 +1,7 @@
 ---
 name: copilot-agent
 description: |
-  Create, validate, and manage Microsoft 365 Copilot Declarative Agents. Use this skill whenever the user mentions Copilot agents, declarative agents, appPackage folders, Teams Toolkit, Microsoft 365 Agents Toolkit, TypeSpec agents, or wants to create/validate/update Copilot agent configurations. Trigger on phrases like "create a Copilot agent", "validate my appPackage", "update declarative agent", "check agent manifest", "verify appPackage folder", "add an API tool", "optimize instructions", "add capability", or any work related to Copilot extensibility.
+  Create, validate, and manage Microsoft 365 Copilot Declarative Agents. Use this skill whenever the user mentions Copilot agents, declarative agents, appPackage folders, Teams Toolkit, Microsoft 365 Agents Toolkit, TypeSpec agents, or wants to create/validate/update Copilot agent configurations. Trigger on phrases like "create a Copilot agent", "validate my appPackage", "update declarative agent", "check agent manifest", "verify appPackage folder", "add an API tool", "optimize instructions", "add capability", "add a second plugin", "add another plugin", "add-plugin", "multi-MCP agent", "multiple APIs in one agent", "two plugins", "plugin injection limit", "cross-plugin chaining", "add CodeInterpreter", "add WebSearch", "add GraphicArt", "enable capabilities", "file generation disabled", "add knowledge source", or any work related to Copilot extensibility.
 ---
 
 # Microsoft 365 Copilot Declarative Agent Skill

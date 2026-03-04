@@ -4,6 +4,24 @@ Capabilities define what knowledge sources and tools a declarative agent can acc
 
 Only add capabilities that align with the agent's goals. Less is more — focused agents perform better.
 
+## Licensing Summary
+
+| Capability | License Required? |
+|-----------|-------------------|
+| WebSearch | No |
+| CodeInterpreter | No |
+| GraphicArt | No |
+| OneDriveAndSharePoint | Yes (Copilot license or metered usage) |
+| GraphConnectors | Yes (Copilot license or metered usage) |
+| Dataverse | Yes (Copilot license or metered usage) |
+| TeamsMessages | Yes (license only) |
+| Email | Yes (license only) |
+| People | Yes (license only) |
+| Meetings | Yes (license only) |
+| ScenarioModels | Yes |
+
+**Use command**: `/copilot-declarative-agent:add-capability [name]` to add capabilities interactively.
+
 ---
 
 ## 1. WebSearch
