@@ -25,6 +25,7 @@ Read the appropriate reference file based on the task:
 | Configuring security (auth types, isConsequential, security_info, data_handling, sensitivity labels) | `references/security-compliance.md` |
 | Migrating instructions for GPT 5.1+, fixing tone drift, stabilizing step order, instruction audit | `references/gpt51-migration.md` |
 | Testing, debugging, developer mode, deployment | `references/debugging.md` |
+| ATK CLI commands (atk new, validate, provision, deploy, preview, publish) | `references/toolkit-cli.md` |
 
 ## App Package Structure
 
@@ -43,8 +44,21 @@ appPackage/
 | Approach | Tool | Best For |
 |----------|------|----------|
 | No-code | Agent Builder (M365 Copilot app) | Quick in-browser creation, no API actions |
-| Code-first | M365 Agents Toolkit (VS Code) | Full control, JSON or TypeSpec |
+| Code-first | M365 Agents Toolkit (VS Code or CLI) | Full control, JSON or TypeSpec |
 | Manual | Hand-crafted JSON | Maximum flexibility |
+
+## Toolkit CLI Workflows
+
+For CLI-based workflows using the `atk` command, dedicated skills handle each lifecycle stage:
+
+| Workflow | Skill | Agent |
+|----------|-------|-------|
+| Scaffold new project | `toolkit-create` | `toolkit-creator` |
+| Validate project | `toolkit-validate` | `toolkit-validator` |
+| Test/preview agent | `toolkit-test` | `toolkit-tester` |
+| Deploy/publish agent | `toolkit-deploy` | `toolkit-deployer` |
+
+See `references/toolkit-cli.md` for the full CLI command reference.
 
 ## Instruction Architecture (Summary)
 
