@@ -350,57 +350,80 @@ Controls what the user sees during function execution:
 
 ## apiDefinition.json (OpenAPI 3.0.0)
 
+### Size Limits
+
+| Constraint | Limit | Notes |
+|------------|-------|-------|
+| **File size** | **100 KB max** | Hard limit — files over 100 KB will fail validation or be rejected |
+| Functions per plugin | Unlimited, but **quality degrades >10** | Due to 4,096 token budget; aim for ≤25 per plugin |
+| Plugin response | 25 items max | Per API call response |
+
+### Slimming Strategies
+
+When approaching the 100 KB limit:
+
+1. **Use `$ref` components** — Define reusable schemas in `components/schemas` and reference them:
+   ```json
+   "components": {
+     "schemas": {
+       "ApiResponse": { "type": "object" },
+       "CommonFilters": {
+         "type": "object",
+         "properties": {
+           "status": { "type": "string" },
+           "created_within": { "type": "string" }
+         }
+       }
+     }
+   }
+   ```
+   Then reference with `{"$ref": "#/components/schemas/CommonFilters"}` in request bodies.
+
+2. **Use `allOf` to compose schemas** — Combine a `$ref` with operation-specific properties:
+   ```json
+   "schema": {
+     "allOf": [
+       { "$ref": "#/components/schemas/CommonFilters" },
+       { "type": "object", "properties": { "group_by": { "type": "string" } }, "required": ["group_by"] }
+     ]
+   }
+   ```
+
+3. **Remove redundant fields** — Push `description` text to apiPlugin.json reasoning instructions instead of duplicating in the OpenAPI spec. Keep only `summary` on operations.
+
+4. **Simplify response schemas** — Use a single `$ref` to a generic response component instead of inlining response schemas on every operation.
+
+5. **Remove internal-only parameters** — Don't expose server-side defaults (e.g., `cache`, `fields`, `max_results`) in the OpenAPI spec if the server handles defaults.
+
+6. **Split into multiple plugins** — When a single plugin exceeds 25 functions or its apiDefinition exceeds 100 KB, split by domain (see Plugin Splitting below).
+
+### Example (Slim)
+
 ```json
 {
   "openapi": "3.0.0",
-  "info": {
-    "title": "My API",
-    "version": "1.0.0",
-    "description": "API for managing resources"
-  },
-  "servers": [
-    { "url": "https://api.example.com" }
-  ],
+  "info": { "title": "My API", "version": "1.0.0" },
+  "servers": [{ "url": "https://api.example.com" }],
   "paths": {
-    "/api/v1/resources/searchResources": {
+    "/api/v1/search": {
       "post": {
         "operationId": "searchResources",
-        "summary": "Search for resources",
+        "summary": "Search resources",
         "x-openai-isConsequential": false,
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": { "type": "string", "description": "Search query" },
-                  "max_results": { "type": "integer", "description": "Max results (default 10)" }
-                }
-              }
+              "schema": { "$ref": "#/components/schemas/CommonFilters" }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Search results",
+            "description": "OK",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "results": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "name": { "type": "string" },
-                          "status": { "type": "string" }
-                        }
-                      }
-                    }
-                  }
-                }
+                "schema": { "$ref": "#/components/schemas/ApiResponse" }
               }
             }
           }
@@ -409,17 +432,13 @@ Controls what the user sees during function execution:
     }
   },
   "components": {
-    "securitySchemes": {
-      "oauth2": {
-        "type": "oauth2",
-        "flows": {
-          "authorizationCode": {
-            "authorizationUrl": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
-            "tokenUrl": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-            "scopes": {
-              "api://{client-id}/access_as_user": "Access API"
-            }
-          }
+    "schemas": {
+      "ApiResponse": { "type": "object" },
+      "CommonFilters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query" },
+          "status": { "type": "string", "description": "Status filter" }
         }
       }
     }
@@ -436,9 +455,45 @@ How the orchestrator decides which plugins to load:
 | 1-5 plugins | Always injected into prompt |
 | 6+ plugins | Semantic matching on plugin `description_for_model` (not individual functions) |
 
-When >5 plugins are registered, only plugins whose `description_for_model` semantically matches the user's prompt are loaded. All functions from a matched plugin are included.
+When >5 plugins are registered, only plugins whose `description_for_model` semantically matches the user's prompt are loaded. **All functions from a matched plugin are included**, even if only one function matched.
 
-**Best practice**: Write `description_for_model` to cover the full range of scenarios the plugin handles, not just one function.
+A plugin can include an unlimited number of functions. However, **quality degrades if more than 10 functions are included** in a single plugin due to token window limits.
+
+### Plugin Splitting
+
+When to split into multiple plugins:
+- apiDefinition.json exceeds **100 KB**
+- Plugin has **more than 25 functions** (conservative) or **more than 10** (Microsoft recommendation)
+- Functions naturally group into distinct domains
+
+**Architecture**: Each plugin is a separate `apiPlugin-{domain}.json` + `apiDefinition-{domain}.json` pair, referenced as separate actions in `declarativeAgent.json`:
+
+```json
+"actions": [
+  { "id": "corePlugin", "file": "apiPlugin-core.json" },
+  { "id": "projectsPlugin", "file": "apiPlugin-projects.json" }
+]
+```
+
+Each apiPlugin file has its own `runtimes` array pointing to its own apiDefinition file:
+```json
+"runtimes": [{
+  "type": "OpenApi",
+  "auth": { "type": "OAuthPluginVault", "reference_id": "..." },
+  "spec": { "url": "apiDefinition-core.json" },
+  "run_for_functions": ["func1", "func2"]
+}]
+```
+
+**Planning for future plugins**: Keep total plugin count ≤5 so all are always injected. Example with 4 plugins:
+| Plugin | Functions | apiDefinition size |
+|--------|-----------|-------------------|
+| `apiPlugin-autotask.json` | 25 | ~31 KB |
+| `apiPlugin-autotask-projects.json` | 25 | ~35 KB |
+| `apiPlugin-passportal.json` | ~15 | ~20 KB |
+| `apiPlugin-lionguard.json` | ~10 | ~15 KB |
+
+**Best practice**: Write `description_for_model` to cover the full range of scenarios each plugin handles, not just one function. Keep it under 2,048 chars.
 
 ## Function Capabilities Object
 

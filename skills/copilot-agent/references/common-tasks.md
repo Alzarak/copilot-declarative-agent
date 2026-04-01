@@ -94,6 +94,43 @@ Update four files in sync — this is the most error-prone task:
 - `x-openai-isConsequential`: `false` for read-only, `true` for create/update/delete
 - Run validation after changes
 
+### Multi-Plugin Architecture
+
+When you have more than 25 functions or your apiDefinition.json exceeds 100 KB, split into multiple plugins. Each plugin is a separate pair of files:
+
+```
+appPackage/
+├── apiPlugin-core.json           → apiDefinition-core.json
+├── apiPlugin-projects.json       → apiDefinition-projects.json
+└── declarativeAgent.json         → references both plugins
+```
+
+**declarativeAgent.json** references multiple actions:
+```json
+"actions": [
+  { "id": "corePlugin", "file": "apiPlugin-core.json" },
+  { "id": "projectsPlugin", "file": "apiPlugin-projects.json" }
+]
+```
+
+**Each apiPlugin file** has its own runtime pointing to its own apiDefinition:
+```json
+"runtimes": [{
+  "type": "OpenApi",
+  "auth": { "type": "OAuthPluginVault", "reference_id": "same-ref-id" },
+  "spec": { "url": "apiDefinition-core.json" },
+  "run_for_functions": ["func1", "func2", "func3"]
+}]
+```
+
+**Key rules for multi-plugin**:
+- Keep total plugin count ≤5 so all are always injected (no semantic matching lottery)
+- Each plugin should have a distinct `namespace` (e.g., `opspilot`, `opspilotprojects`)
+- Each plugin needs its own `description_for_model` scoped to its domain
+- All plugins can share the same OAuth `reference_id`
+- Use `$ref` components within each apiDefinition to deduplicate schemas (see file-schemas.md)
+- A function must appear in exactly one plugin — no overlap between `run_for_functions` arrays
+
 ## Adding Conversation Starters
 
 ```json

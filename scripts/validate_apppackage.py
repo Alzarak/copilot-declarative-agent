@@ -638,10 +638,28 @@ class AppPackageValidator:
             )
 
     def _validate_api_plugin(self):
-        """Validate apiPlugin.json structure."""
-        path = self.package_path / "apiPlugin.json"
-        if not path.exists():
-            return
+        """Validate apiPlugin JSON files. Supports both single apiPlugin.json
+        and multiple apiPlugin-*.json files referenced from declarativeAgent.json."""
+        # Discover plugin files from declarativeAgent.json actions
+        plugin_files = []
+        da_path = self.package_path / "declarativeAgent.json"
+        if da_path.exists():
+            da_data = self._load_json(da_path)
+            if da_data and "actions" in da_data:
+                for action in da_data["actions"]:
+                    pfile = action.get("file", "")
+                    if (self.package_path / pfile).exists():
+                        plugin_files.append(pfile)
+        # Fallback to legacy single file
+        if not plugin_files and (self.package_path / "apiPlugin.json").exists():
+            plugin_files.append("apiPlugin.json")
+
+        for pfile in plugin_files:
+            self._validate_single_api_plugin(pfile)
+
+    def _validate_single_api_plugin(self, plugin_filename: str):
+        """Validate a single apiPlugin JSON file."""
+        path = self.package_path / plugin_filename
 
         data = self._load_json(path)
         if not data:
@@ -651,19 +669,19 @@ class AppPackageValidator:
         required = ["schema_version", "name_for_human", "functions"]
         for field in required:
             if field in data:
-                self.passed.append(f"apiPlugin.json has '{field}'")
+                self.passed.append(f"{plugin_filename} has '{field}'")
             else:
-                self.errors.append(f"apiPlugin.json missing required field: '{field}'")
+                self.errors.append(f"{plugin_filename} missing required field: '{field}'")
 
         # Check schema version currency
         if "schema_version" in data:
             if data["schema_version"] == CURRENT_PLUGIN_VERSION:
                 self.passed.append(
-                    f"apiPlugin.json schema_version is current ({CURRENT_PLUGIN_VERSION})"
+                    f"{plugin_filename} schema_version is current ({CURRENT_PLUGIN_VERSION})"
                 )
             else:
                 self.warnings.append(
-                    f"apiPlugin.json schema_version '{data['schema_version']}' differs from "
+                    f"{plugin_filename} schema_version '{data['schema_version']}' differs from "
                     f"known current version '{CURRENT_PLUGIN_VERSION}'"
                 )
 
@@ -672,11 +690,11 @@ class AppPackageValidator:
             dfm_len = len(data["description_for_model"])
             if dfm_len <= 2048:
                 self.passed.append(
-                    f"apiPlugin.json description_for_model <= 2048 chars ({dfm_len})"
+                    f"{plugin_filename} description_for_model <= 2048 chars ({dfm_len})"
                 )
             else:
                 self.errors.append(
-                    f"apiPlugin.json description_for_model is {dfm_len} chars "
+                    f"{plugin_filename} description_for_model is {dfm_len} chars "
                     f"(max 2048 — content beyond this MAY be ignored by Copilot)"
                 )
 
@@ -712,28 +730,28 @@ class AppPackageValidator:
             for i, func in enumerate(data["functions"]):
                 fname = func.get("name", f"unnamed[{i}]")
                 if "name" in func and "description" in func:
-                    self.passed.append(f"apiPlugin.json function '{fname}' has name and description")
+                    self.passed.append(f"{plugin_filename} function '{fname}' has name and description")
                 else:
-                    self.errors.append(f"apiPlugin.json function[{i}] missing name or description")
+                    self.errors.append(f"{plugin_filename} function[{i}] missing name or description")
 
                 # Check for reasoning/responding states
                 if "states" in func:
                     if "reasoning" in func["states"]:
                         reasoning = func["states"]["reasoning"]
                         self.passed.append(
-                            f"apiPlugin.json function '{fname}' has reasoning state"
+                            f"{plugin_filename} function '{fname}' has reasoning state"
                         )
                         # Check reasoning has instructions array
                         if "instructions" in reasoning:
                             instr = reasoning["instructions"]
                             if isinstance(instr, list) and len(instr) > 0:
                                 self.passed.append(
-                                    f"apiPlugin.json function '{fname}' reasoning has "
+                                    f"{plugin_filename} function '{fname}' reasoning has "
                                     f"{len(instr)} instruction(s)"
                                 )
                             else:
                                 self.warnings.append(
-                                    f"apiPlugin.json function '{fname}' reasoning.instructions "
+                                    f"{plugin_filename} function '{fname}' reasoning.instructions "
                                     f"is empty — add parameter mapping and usage guidance"
                                 )
                     else:
@@ -742,18 +760,18 @@ class AppPackageValidator:
                     if "responding" in func["states"]:
                         responding = func["states"]["responding"]
                         self.passed.append(
-                            f"apiPlugin.json function '{fname}' has responding state"
+                            f"{plugin_filename} function '{fname}' has responding state"
                         )
                         if "instructions" in responding:
                             instr = responding["instructions"]
                             if isinstance(instr, list) and len(instr) > 0:
                                 self.passed.append(
-                                    f"apiPlugin.json function '{fname}' responding has "
+                                    f"{plugin_filename} function '{fname}' responding has "
                                     f"{len(instr)} instruction(s)"
                                 )
                             else:
                                 self.warnings.append(
-                                    f"apiPlugin.json function '{fname}' responding.instructions "
+                                    f"{plugin_filename} function '{fname}' responding.instructions "
                                     f"is empty — add result formatting guidance"
                                 )
                     else:
@@ -764,13 +782,13 @@ class AppPackageValidator:
 
             if funcs_without_reasoning:
                 self.warnings.append(
-                    f"apiPlugin.json functions missing states.reasoning: "
+                    f"{plugin_filename} functions missing states.reasoning: "
                     f"{funcs_without_reasoning}. Add reasoning.instructions with parameter "
                     f"mapping and usage guidance for better function selection"
                 )
             if funcs_without_responding:
                 self.warnings.append(
-                    f"apiPlugin.json functions missing states.responding: "
+                    f"{plugin_filename} functions missing states.responding: "
                     f"{funcs_without_responding}. Add responding.instructions with result "
                     f"formatting and error handling guidance"
                 )
@@ -782,18 +800,18 @@ class AppPackageValidator:
                 rt_type = runtime.get("type", "unknown")
                 if "type" in runtime:
                     if rt_type in valid_runtime_types:
-                        self.passed.append(f"apiPlugin.json runtime[{i}] type '{rt_type}' is valid")
+                        self.passed.append(f"{plugin_filename} runtime[{i}] type '{rt_type}' is valid")
                     else:
                         self.warnings.append(
-                            f"apiPlugin.json runtime[{i}] has unknown type: {rt_type}"
+                            f"{plugin_filename} runtime[{i}] has unknown type: {rt_type}"
                         )
                 else:
-                    self.errors.append(f"apiPlugin.json runtime[{i}] missing type")
+                    self.errors.append(f"{plugin_filename} runtime[{i}] missing type")
 
                 if "spec" in runtime and "url" in runtime["spec"]:
-                    self.passed.append(f"apiPlugin.json runtime[{i}] has spec.url")
+                    self.passed.append(f"{plugin_filename} runtime[{i}] has spec.url")
                 elif rt_type == "OpenApi":
-                    self.warnings.append(f"apiPlugin.json runtime[{i}] missing spec.url")
+                    self.warnings.append(f"{plugin_filename} runtime[{i}] missing spec.url")
 
         # Cross-check functions vs run_for_functions
         func_names = {f["name"] for f in data.get("functions", []) if "name" in f}
@@ -804,46 +822,65 @@ class AppPackageValidator:
         orphaned = func_names - runtime_funcs
         if orphaned:
             self.errors.append(
-                f"apiPlugin.json functions not in any run_for_functions: {sorted(orphaned)}"
+                f"{plugin_filename} functions not in any run_for_functions: {sorted(orphaned)}"
             )
         elif func_names:
-            self.passed.append("apiPlugin.json all functions are in run_for_functions")
+            self.passed.append(f"{plugin_filename} all functions are in run_for_functions")
 
         extra = runtime_funcs - func_names
         if extra:
             self.errors.append(
-                f"apiPlugin.json run_for_functions references undefined functions: {sorted(extra)}"
+                f"{plugin_filename} run_for_functions references undefined functions: {sorted(extra)}"
             )
         elif runtime_funcs:
             self.passed.append(
-                "apiPlugin.json all run_for_functions entries have matching function definitions"
+                f"{plugin_filename} all run_for_functions entries have matching function definitions"
             )
 
     def _validate_security_info(self):
-        """Validate security_info.data_handling on apiPlugin functions."""
-        plugin_path = self.package_path / "apiPlugin.json"
-        api_path = self.package_path / "apiDefinition.json"
+        """Validate security_info.data_handling on apiPlugin functions.
+        Supports multiple plugin files referenced from declarativeAgent.json."""
+        # Discover all plugin files
+        plugin_files = []
+        da_path = self.package_path / "declarativeAgent.json"
+        if da_path.exists():
+            da_data = self._load_json(da_path)
+            if da_data and "actions" in da_data:
+                for action in da_data["actions"]:
+                    pfile = action.get("file", "")
+                    if (self.package_path / pfile).exists():
+                        plugin_files.append(pfile)
+        # Fallback to legacy single file
+        if not plugin_files and (self.package_path / "apiPlugin.json").exists():
+            plugin_files.append("apiPlugin.json")
 
-        if not plugin_path.exists():
-            return
+        for pfile in plugin_files:
+            self._validate_plugin_security_info(pfile)
+
+    def _validate_plugin_security_info(self, plugin_filename: str):
+        """Validate security_info for a single apiPlugin file."""
+        plugin_path = self.package_path / plugin_filename
 
         plugin_data = self._load_json(plugin_path)
         if not plugin_data:
             return
 
-        # Build a set of consequential operationIds from apiDefinition
+        # Build a set of consequential operationIds from referenced apiDefinition(s)
         consequential_ops: set[str] = set()
-        if api_path.exists():
-            api_data = self._load_json(api_path)
-            if api_data and "paths" in api_data:
-                for path_obj in api_data["paths"].values():
-                    for method_obj in path_obj.values():
-                        if not isinstance(method_obj, dict):
-                            continue
-                        if method_obj.get("x-openai-isConsequential") is True:
-                            op_id = method_obj.get("operationId")
-                            if op_id:
-                                consequential_ops.add(op_id)
+        for rt in plugin_data.get("runtimes", []):
+            api_file = rt.get("spec", {}).get("url", "")
+            api_path = self.package_path / api_file if api_file else None
+            if api_path and api_path.exists():
+                api_data = self._load_json(api_path)
+                if api_data and "paths" in api_data:
+                    for path_obj in api_data["paths"].values():
+                        for method_obj in path_obj.values():
+                            if not isinstance(method_obj, dict):
+                                continue
+                            if method_obj.get("x-openai-isConsequential") is True:
+                                op_id = method_obj.get("operationId")
+                                if op_id:
+                                    consequential_ops.add(op_id)
 
         for func in plugin_data.get("functions", []):
             fname = func.get("name", "unnamed")
@@ -899,10 +936,53 @@ class AppPackageValidator:
                 )
 
     def _validate_api_definition(self):
-        """Validate apiDefinition.json structure if it exists."""
-        path = self.package_path / "apiDefinition.json"
+        """Validate apiDefinition JSON files. Supports both single apiDefinition.json and
+        multiple apiDefinition-*.json files referenced from apiPlugin files."""
+        # Discover all apiDefinition files referenced from plugin manifests
+        api_def_files = set()
+        da_path = self.package_path / "declarativeAgent.json"
+        if da_path.exists():
+            da_data = self._load_json(da_path)
+            if da_data and "actions" in da_data:
+                for action in da_data["actions"]:
+                    plugin_file = action.get("file", "")
+                    plugin_path = self.package_path / plugin_file
+                    if plugin_path.exists():
+                        pdata = self._load_json(plugin_path)
+                        if pdata and "runtimes" in pdata:
+                            for rt in pdata["runtimes"]:
+                                spec_url = rt.get("spec", {}).get("url", "")
+                                if spec_url:
+                                    api_def_files.add(spec_url)
+
+        # Fallback to legacy single file
+        if not api_def_files:
+            legacy = self.package_path / "apiDefinition.json"
+            if legacy.exists():
+                api_def_files.add("apiDefinition.json")
+
+        for api_file in sorted(api_def_files):
+            self._validate_single_api_definition(api_file)
+
+    def _validate_single_api_definition(self, filename: str):
+        """Validate a single apiDefinition JSON file."""
+        path = self.package_path / filename
         if not path.exists():
             return
+
+        # File size check
+        file_size = path.stat().st_size
+        file_size_kb = file_size / 1024
+        if file_size > 100_000:
+            self.errors.append(
+                f"{filename} is {file_size_kb:.0f} KB — exceeds the 100 KB limit. "
+                f"Split into multiple plugins or use $ref components to reduce size."
+            )
+        elif file_size > 80_000:
+            self.warnings.append(
+                f"{filename} is {file_size_kb:.0f} KB — approaching the 100 KB limit. "
+                f"Consider using $ref components or splitting into multiple plugins."
+            )
 
         data = self._load_json(path)
         if not data:
@@ -911,18 +991,24 @@ class AppPackageValidator:
         # Check OpenAPI version
         if "openapi" in data:
             if data["openapi"].startswith(CURRENT_OPENAPI_VERSION):
-                self.passed.append(f"apiDefinition.json has OpenAPI version {data['openapi']}")
+                self.passed.append(f"{filename} has OpenAPI version {data['openapi']}")
             else:
                 self.warnings.append(
-                    f"apiDefinition.json OpenAPI version '{data['openapi']}' may not be compatible "
+                    f"{filename} OpenAPI version '{data['openapi']}' may not be compatible "
                     f"(expected {CURRENT_OPENAPI_VERSION}.x)"
                 )
 
         # Check paths exist
         if "paths" in data and len(data["paths"]) > 0:
-            self.passed.append(f"apiDefinition.json has {len(data['paths'])} path(s)")
+            num_paths = len(data["paths"])
+            self.passed.append(f"{filename} has {num_paths} path(s)")
+            if num_paths > 25:
+                self.warnings.append(
+                    f"{filename} has {num_paths} operations — quality may degrade above 25. "
+                    f"Consider splitting into multiple plugins."
+                )
         else:
-            self.warnings.append("apiDefinition.json has no paths defined")
+            self.warnings.append(f"{filename} has no paths defined")
 
         # Check isConsequential on operations
         if "paths" in data:
@@ -988,9 +1074,21 @@ class AppPackageValidator:
                                 f"declarativeAgent.json references missing file: {action['file']}"
                             )
 
-        # apiPlugin -> apiDefinition
-        plugin_path = self.package_path / "apiPlugin.json"
-        if plugin_path.exists():
+        # apiPlugin -> apiDefinition (supports multiple plugin files)
+        plugin_files = set()
+        if da_path.exists():
+            da_data = self._load_json(da_path)
+            if da_data and "actions" in da_data:
+                for action in da_data["actions"]:
+                    pfile = action.get("file", "")
+                    if (self.package_path / pfile).exists():
+                        plugin_files.add(pfile)
+        # Fallback to legacy single file
+        if not plugin_files and (self.package_path / "apiPlugin.json").exists():
+            plugin_files.add("apiPlugin.json")
+
+        for pfile in sorted(plugin_files):
+            plugin_path = self.package_path / pfile
             data = self._load_json(plugin_path)
             if data and "runtimes" in data:
                 for runtime in data["runtimes"]:
@@ -998,55 +1096,107 @@ class AppPackageValidator:
                         spec_path = self.package_path / runtime["spec"]["url"]
                         if spec_path.exists():
                             self.passed.append(
-                                f"apiPlugin.json references existing file: "
+                                f"{pfile} references existing file: "
                                 f"{runtime['spec']['url']}"
                             )
                         else:
                             self.errors.append(
-                                f"apiPlugin.json references missing file: "
+                                f"{pfile} references missing file: "
                                 f"{runtime['spec']['url']}"
                             )
 
     def _check_function_sync(self):
-        """Check that apiPlugin function names match apiDefinition operationIds."""
-        plugin_path = self.package_path / "apiPlugin.json"
-        api_path = self.package_path / "apiDefinition.json"
+        """Check that apiPlugin function names match apiDefinition operationIds.
+        Supports multiple plugin files referenced from declarativeAgent.json."""
+        # Discover all plugin files from declarativeAgent.json actions
+        plugin_pairs = []  # list of (plugin_file, api_def_file)
+        da_path = self.package_path / "declarativeAgent.json"
+        if da_path.exists():
+            da_data = self._load_json(da_path)
+            if da_data and "actions" in da_data:
+                for action in da_data["actions"]:
+                    pfile = action.get("file", "")
+                    ppath = self.package_path / pfile
+                    if ppath.exists():
+                        pdata = self._load_json(ppath)
+                        if pdata and "runtimes" in pdata:
+                            for rt in pdata["runtimes"]:
+                                api_file = rt.get("spec", {}).get("url", "")
+                                if api_file and (self.package_path / api_file).exists():
+                                    plugin_pairs.append((pfile, api_file))
 
-        if not plugin_path.exists() or not api_path.exists():
-            return
+        # Fallback to legacy single-file pattern
+        if not plugin_pairs:
+            legacy_plugin = self.package_path / "apiPlugin.json"
+            legacy_api = self.package_path / "apiDefinition.json"
+            if legacy_plugin.exists() and legacy_api.exists():
+                plugin_pairs.append(("apiPlugin.json", "apiDefinition.json"))
 
-        plugin_data = self._load_json(plugin_path)
-        api_data = self._load_json(api_path)
+        all_funcs_across_plugins = []
+        for plugin_file, api_file in plugin_pairs:
+            plugin_data = self._load_json(self.package_path / plugin_file)
+            api_data = self._load_json(self.package_path / api_file)
+            if not plugin_data or not api_data:
+                continue
 
-        if not plugin_data or not api_data:
-            return
+            plugin_funcs = {f["name"] for f in plugin_data.get("functions", []) if "name" in f}
+            run_for = set()
+            for rt in plugin_data.get("runtimes", []):
+                run_for.update(rt.get("run_for_functions", []))
 
-        plugin_funcs = {f["name"] for f in plugin_data.get("functions", []) if "name" in f}
+            api_operation_ids: set[str] = set()
+            for path_obj in api_data.get("paths", {}).values():
+                for method_obj in path_obj.values():
+                    if isinstance(method_obj, dict) and "operationId" in method_obj:
+                        api_operation_ids.add(method_obj["operationId"])
 
-        api_operation_ids: set[str] = set()
-        for path_obj in api_data.get("paths", {}).values():
-            for method_obj in path_obj.values():
-                if isinstance(method_obj, dict) and "operationId" in method_obj:
-                    api_operation_ids.add(method_obj["operationId"])
+            # Check functions match run_for_functions
+            funcs_not_in_run = plugin_funcs - run_for
+            if funcs_not_in_run:
+                self.errors.append(
+                    f"{plugin_file} functions not in run_for_functions: "
+                    f"{sorted(funcs_not_in_run)}"
+                )
+            run_not_in_funcs = run_for - plugin_funcs
+            if run_not_in_funcs:
+                self.warnings.append(
+                    f"{plugin_file} run_for_functions entries without function definitions: "
+                    f"{sorted(run_not_in_funcs)}"
+                )
 
-        missing_ops = plugin_funcs - api_operation_ids
-        if missing_ops:
-            self.errors.append(
-                f"apiPlugin functions missing from apiDefinition operationIds: "
-                f"{sorted(missing_ops)}"
-            )
+            # Check functions match apiDefinition operationIds
+            missing_ops = plugin_funcs - api_operation_ids
+            if missing_ops:
+                self.errors.append(
+                    f"{plugin_file} functions missing from {api_file} operationIds: "
+                    f"{sorted(missing_ops)}"
+                )
 
-        extra_ops = api_operation_ids - plugin_funcs
-        if extra_ops:
-            self.warnings.append(
-                f"apiDefinition operationIds not in apiPlugin functions: {sorted(extra_ops)}"
-            )
+            extra_ops = api_operation_ids - plugin_funcs
+            if extra_ops:
+                self.warnings.append(
+                    f"{api_file} operationIds not in {plugin_file} functions: "
+                    f"{sorted(extra_ops)}"
+                )
 
-        if not missing_ops and not extra_ops and plugin_funcs:
-            self.passed.append(
-                f"apiPlugin functions and apiDefinition operationIds are in sync "
-                f"({len(plugin_funcs)} functions)"
-            )
+            if not missing_ops and not extra_ops and plugin_funcs:
+                self.passed.append(
+                    f"{plugin_file} functions and {api_file} operationIds are in sync "
+                    f"({len(plugin_funcs)} functions)"
+                )
+
+            all_funcs_across_plugins.append((plugin_file, plugin_funcs))
+
+        # Check for function overlap between plugins
+        if len(all_funcs_across_plugins) > 1:
+            for i, (pfile_a, funcs_a) in enumerate(all_funcs_across_plugins):
+                for pfile_b, funcs_b in all_funcs_across_plugins[i + 1:]:
+                    overlap = funcs_a & funcs_b
+                    if overlap:
+                        self.errors.append(
+                            f"Function overlap between {pfile_a} and {pfile_b}: "
+                            f"{sorted(overlap)}"
+                        )
 
     def _load_json(self, path: Path) -> Any | None:
         """Load and parse JSON file, with caching."""
