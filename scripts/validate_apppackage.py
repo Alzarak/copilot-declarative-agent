@@ -103,6 +103,16 @@ class AppPackageValidator:
             else:
                 self.errors.append(f"manifest.json missing required field: '{field}'")
 
+        # Check $schema property (required by atk validate)
+        expected_schema = f"https://developer.microsoft.com/json-schemas/teams/v{CURRENT_MANIFEST_VERSION}/MicrosoftTeams.schema.json"
+        if "$schema" in data:
+            self.passed.append(f"manifest.json has $schema property")
+        else:
+            self.errors.append(
+                f"manifest.json missing '$schema' property — required by atk validate. "
+                f"Add: \"$schema\": \"{expected_schema}\""
+            )
+
         # Check schema version currency
         if "manifestVersion" in data:
             if data["manifestVersion"] == CURRENT_MANIFEST_VERSION:
@@ -179,6 +189,16 @@ class AppPackageValidator:
                 self.passed.append(f"declarativeAgent.json has '{field}'")
             else:
                 self.errors.append(f"declarativeAgent.json missing required field: '{field}'")
+
+        # Check $schema property (required by atk validate)
+        expected_schema = f"https://developer.microsoft.com/json-schemas/copilot/declarative-agent/{CURRENT_DA_VERSION}/schema.json"
+        if "$schema" in data:
+            self.passed.append(f"declarativeAgent.json has $schema property")
+        else:
+            self.errors.append(
+                f"declarativeAgent.json missing '$schema' property — required by atk validate. "
+                f"Add: \"$schema\": \"{expected_schema}\""
+            )
 
         # Check schema version currency
         if "version" in data:
@@ -672,6 +692,21 @@ class AppPackageValidator:
                 self.passed.append(f"{plugin_filename} has '{field}'")
             else:
                 self.errors.append(f"{plugin_filename} missing required field: '{field}'")
+
+        # Check $schema property (required by atk validate)
+        expected_schema = f"https://developer.microsoft.com/json-schemas/copilot/plugin/v2.4/schema.json"
+        if "$schema" in data:
+            if data["$schema"] == expected_schema:
+                self.passed.append(f"{plugin_filename} has correct $schema URL")
+            else:
+                self.warnings.append(
+                    f"{plugin_filename} $schema URL '{data['$schema']}' differs from expected '{expected_schema}'"
+                )
+        else:
+            self.errors.append(
+                f"{plugin_filename} missing '$schema' property — required by atk validate. "
+                f"Add: \"$schema\": \"{expected_schema}\""
+            )
 
         # Check schema version currency
         if "schema_version" in data:

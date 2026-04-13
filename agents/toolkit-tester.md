@@ -132,3 +132,4 @@ If any pipeline step fails:
 - Local preview requires Node.js, .NET SDK, and Azure Functions Core Tools
 - Preview logs are saved to `~/.fx/cli-log/local-preview/`
 - Always use `-i false` for non-interactive execution
+- **Manifest ID handling**: If `manifest.json` has a hardcoded UUID in the `id` field and provision fails because the app isn't registered, do NOT create a new registration. Instead, convert the `id` to `${{TEAMS_APP_ID}}` and set `TEAMS_APP_ID=<the-original-uuid>` in the appropriate `env/.env.<env>` file. This preserves the existing app identity and avoids creating duplicate registrations.

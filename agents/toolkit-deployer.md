@@ -144,6 +144,7 @@ If any step fails:
 - **Before provisioning**: Verify the target environment to avoid deploying to wrong env
 - **Cost awareness**: Cloud provisioning may incur Azure costs — note this to the user
 - Always use `-i false` for non-interactive execution
+- **Manifest ID handling**: If `manifest.json` has a hardcoded UUID in the `id` field and provision fails because the app isn't registered, do NOT create a new registration. Instead, convert the `id` to `${{TEAMS_APP_ID}}` and set `TEAMS_APP_ID=<the-original-uuid>` in the appropriate `env/.env.<env>` file. This preserves the existing app identity and avoids creating duplicate registrations.
 
 ## Environment Management
 
