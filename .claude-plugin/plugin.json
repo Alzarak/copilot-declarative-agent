@@ -1,6 +1,6 @@
 {
   "name": "copilot-declarative-agent",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Create, validate, test, deploy, and manage Microsoft 365 Copilot Declarative Agents. Comprehensive toolkit with scaffolding, validation, instruction optimization, schema management, and M365 Agents Toolkit CLI integration.",
   "author": {
     "name": "Alzarak",
