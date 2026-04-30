@@ -5,9 +5,9 @@
         "matcher": "Write|Edit",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "If the file just written or edited is inside an appPackage directory (contains manifest.json, declarativeAgent.json, apiPlugin.json, or apiDefinition.json), briefly note that the user should run `/copilot:validate` to check for issues. Keep it to one sentence. If the file is not in an appPackage directory, output nothing.",
-            "timeout": 10
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '/appPackage/|/appPackage$|(manifest|declarativeAgent|apiPlugin|apiDefinition)\\.json$' && echo 'Reminder: run /copilot:validate to check the appPackage for issues.' || true",
+            "timeout": 5
           }
         ]
       }
