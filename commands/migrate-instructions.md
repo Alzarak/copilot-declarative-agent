@@ -1,6 +1,6 @@
 ---
 description: Migrate a monolithic description_for_model to the layered instruction architecture
-allowed-tools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 argument-hint: "[path_to_apppackage]"
 ---
 

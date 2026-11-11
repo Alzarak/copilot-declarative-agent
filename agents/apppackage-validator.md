@@ -2,7 +2,7 @@
 name: apppackage-validator
 description: |
   Proactively validates Microsoft 365 Copilot Declarative Agent appPackage files after modifications. Use this agent when appPackage JSON files are edited, when the user asks to check their agent configuration, or after creating/modifying declarativeAgent.json, apiPlugin.json, apiDefinition.json, or manifest.json.
-whenToUse: |
+
   Trigger this agent proactively after the user edits any file in an appPackage directory (manifest.json, declarativeAgent.json, apiPlugin.json, apiDefinition.json). Also trigger when the user asks to validate, check, or verify their Copilot agent configuration.
 
   <example>
@@ -44,7 +44,7 @@ Validate the appPackage directory for correctness, cross-reference integrity, an
 4. For any errors, provide specific fix recommendations
 5. Check instruction quality:
    - Is `description_for_model` under 2,048 chars?
-   - Are conversation_starters within the 6-item limit?
+   - Are conversation_starters within the 12-item limit (v1.7+; keep v1.6 agents to 6)?
    - Do actions have corresponding files?
    - Are all function names in sync across apiPlugin and apiDefinition?
 

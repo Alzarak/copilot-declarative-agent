@@ -9,7 +9,6 @@ tools:
   - Edit
   - Glob
   - Grep
-  - AskUserQuestion
 model: sonnet
 color: blue
 ---
@@ -45,7 +44,7 @@ Confirm `declarative-agent` is available as a capability.
 
 ### 3. Gather Requirements
 
-Ask the user (if not already provided in the dispatch context):
+Use the details from the dispatch context. Subagents cannot ask the user directly — if anything below is missing, stop and return the open questions to the calling session:
 - Agent name (keep under 30 chars)
 - Programming language: `typescript` (recommended), `javascript`, or `csharp`
 - Output folder path

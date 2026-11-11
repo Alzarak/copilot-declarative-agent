@@ -1,6 +1,6 @@
 ---
 description: Validate a declarative agent project using the M365 Agents Toolkit CLI (atk validate)
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "Agent"]
+allowed-tools: Bash, Read, Glob, Grep, Agent
 argument-hint: "[--env dev] [--method validation-rules|test-cases]"
 ---
 

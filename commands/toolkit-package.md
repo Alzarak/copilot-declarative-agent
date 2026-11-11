@@ -1,6 +1,6 @@
 ---
 description: Build a zipped appPackage with template variables resolved (atk package)
-allowed-tools: ["Bash", "Read", "Glob"]
+allowed-tools: Bash, Read, Glob
 argument-hint: "[path_to_appPackage] [--env dev]"
 ---
 

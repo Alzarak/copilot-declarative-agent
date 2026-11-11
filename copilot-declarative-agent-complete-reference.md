@@ -1,6 +1,6 @@
 # Copilot Declarative Agent — Complete Reference Guide
 
-> **Last updated**: February 2026 | **Schema**: declarativeAgent v1.6, apiPlugin v2.2+ | **Model**: GPT 5.1+
+> **Last updated**: November 2026 | **Schema**: declarativeAgent v1.9, apiPlugin v2.4, app manifest 1.30 | **Model**: GPT 5.1+
 > **Source**: Microsoft Learn official documentation + community best practices
 
 ---
@@ -10,7 +10,7 @@
 1. [What Are Declarative Agents](#1-what-are-declarative-agents)
 2. [Architecture & Data Flow](#2-architecture--data-flow)
 3. [App Package Structure](#3-app-package-structure)
-4. [Declarative Agent Manifest (v1.6)](#4-declarative-agent-manifest-v16)
+4. [Declarative Agent Manifest (v1.9)](#4-declarative-agent-manifest-v19)
 5. [Writing Effective Instructions](#5-writing-effective-instructions)
 6. [Instruction Patterns & Templates](#6-instruction-patterns--templates)
 7. [GPT 5.1+ Model Migration](#7-gpt-51-model-migration)
@@ -41,9 +41,10 @@ Declarative agents are customized versions of Microsoft 365 Copilot created thro
 | **Name** | Display name for discovery | 30 chars (M365 Copilot) / 100 chars (Agents Toolkit) |
 | **Description** | What the agent does | 1,000 characters |
 | **Instructions** | Behavioral guidelines & workflows | 8,000 characters |
-| **Capabilities** | Built-in AI capabilities (knowledge sources) | 12 types available |
+| **Capabilities** | Built-in AI capabilities (knowledge sources and actions) | 15 types available |
 | **Actions** | API plugins for external data/actions | 1–10 plugins |
-| **Conversation Starters** | Example prompts shown to users | Max 6 (v1.6) / 12 (v1.5) |
+| **Conversation Starters** | Example prompts shown to users | Max 12 (v1.7+) |
+| **Agent Skills** | SKILL.md folders loaded on demand | Max 8 (v1.9) |
 
 ### Optimal Use Cases
 
@@ -130,29 +131,50 @@ apiPlugin.json
 
 ---
 
-## 4. Declarative Agent Manifest (v1.6)
+## 4. Declarative Agent Manifest (v1.9)
 
 ### Schema URL
 ```
-https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/schema.json
+https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json
 ```
+
+Older versions (v1.0–v1.8) remain accepted. Any property not defined in the schema makes the whole document invalid.
 
 ### Root Object Properties
 
 | Property | Type | Required | Limit | Description |
 |----------|------|----------|-------|-------------|
-| `version` | String | Yes | — | Set to `"v1.6"` |
+| `version` | String | Yes | — | Set to `"v1.9"` |
 | `name` | String | Yes | 100 chars | Agent display name (localizable) |
 | `description` | String | Yes | 1,000 chars | Agent purpose (localizable) |
 | `instructions` | String | Yes | 8,000 chars | Behavioral guidelines (Markdown) |
 | `capabilities` | Array | No | 1 per type | Knowledge sources & AI capabilities |
-| `conversation_starters` | Array | No | **6** (v1.6) | Example prompts for users |
+| `conversation_starters` | Array | No | **12** | Example prompts; `depends_on` hides a starter unless a capability is present (v1.7) |
 | `actions` | Array | No | **1–10** | API plugin references |
-| `behavior_overrides` | Object | No | — | Modify default agent behavior |
+| `agent_skills` | Array | No | **8** | `{ "folder" }` paths to SKILL.md folders in the package (v1.9) |
+| `behavior_overrides` | Object | No | — | Modify default agent behavior; `default_response_mode` (v1.7) |
+| `editorial_answers` | Object | No | 300 answers | Curated Q&A pairs, `url` or `answers` (v1.7) |
 | `disclaimer` | Object | No | 500 chars | Text shown at conversation start |
 | `sensitivity_label` | Object | No | — | Microsoft Purview label (for embedded files) |
 | `worker_agents` | Array | No | — | Other agents this agent can use (preview) |
 | `user_overrides` | Array | No | — | Capabilities users can modify |
+
+### v1.9 Changes from v1.8
+
+- `agent_skills` — up to 8 skill folders, each with a `SKILL.md` (frontmatter `name` + `description`, under 20,000 chars). Folders are relative, inside the package, no `../`. Agents Toolkit needs `TEAMSFX_AGENT_SKILLS=true`.
+- `Fabric` capability — Microsoft Fabric grounding (name only)
+
+### v1.8 Changes from v1.7
+
+- `EmailActions` capability — mailbox write actions (triage, supervised send, delete, inbox rules, auto-reply, folders). Separate from the read-only `Email` capability; `Email` scoping does **not** apply to it.
+- `MeetingActions` capability — scheduling, time-finding polls, time insights
+
+### v1.7 Changes from v1.6
+
+- `editorial_answers` — curated question/answer pairs (max 300) or a `url`
+- `behavior_overrides.default_response_mode` — `Auto`, `Quick response` or `Think deeper`
+- `conversation_starters[].depends_on` — show a starter only when a capability is present
+- Conversation starters max is 12 (the v1.6 page says 6 in one place and 12 in another)
 
 ### v1.6 Changes from v1.5
 
@@ -163,15 +185,15 @@ https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/sche
 - `items_by_id` on Meetings — Scope to specific meetings
 - `include_related_content` on People — Include related docs/emails/Teams messages
 - `group_mailboxes` on Email — Up to 25 group mailboxes
-- `conversation_starters` limit changed to **6** (was 12 in v1.5)
+- `conversation_starters` documented as **6** in the object notes (the property table says 12)
 - `actions` limit formalized as **1–10**
 
 ### Minimal Example
 
 ```json
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/schema.json",
-  "version": "v1.6",
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json",
+  "version": "v1.9",
   "name": "IT Help Desk Agent",
   "description": "Helps employees resolve common IT problems and create support tickets.",
   "instructions": "# OBJECTIVE\nGuide users through IT issue resolution...",
@@ -508,7 +530,7 @@ You can explicitly prompt for these or let the model infer them.
 
 ## 8. Capabilities (Knowledge Sources)
 
-### All 12 Capability Types (v1.6)
+### All 15 Capability Types (v1.9)
 
 | Capability | `name` Value | Key Properties | Limits |
 |------------|-------------|----------------|--------|
@@ -519,10 +541,13 @@ You can explicitly prompt for these or let the model infer them.
 | Code Interpreter | `CodeInterpreter` | — | Python code execution |
 | Dataverse | `Dataverse` | `knowledge_sources[].host_name`, `skill`, `tables` | — |
 | Teams Messages | `TeamsMessages` | `urls[].url` | 5 URLs; omit = all channels/chats |
-| Email | `Email` | `shared_mailbox`, `group_mailboxes`, `folders` | 25 group mailboxes |
+| Email (read-only) | `Email` | `shared_mailbox`, `group_mailboxes`, `folders` | 25 group mailboxes |
+| Email actions | `EmailActions` | — | v1.8; Email scoping does not apply |
 | People | `People` | `include_related_content` | Related content = docs/emails/Teams |
 | Scenario Models | `ScenarioModels` | `models[].id` | — |
 | Meetings | `Meetings` | `items_by_id[].id`, `is_series` | 5 meeting IDs |
+| Meeting actions | `MeetingActions` | — | v1.8 |
+| Fabric | `Fabric` | — | v1.9; no scoping properties |
 | Embedded Knowledge | `EmbeddedKnowledge` | `files[].file` | 10 files, 1MB each (not yet available) |
 
 ### Knowledge Source Best Practices
@@ -944,7 +969,9 @@ Enable with `-developer on` in Copilot Chat to see debug cards showing:
 | Description (agent) | 1,000 characters |
 | description_for_model (plugin) | 2,048 characters |
 | Token budget (runtime) | 4,096 tokens |
-| Conversation starters | 6 (v1.6) |
+| Conversation starters | 12 (v1.7+) |
+| Agent skills | 8 (v1.9) |
+| SKILL.md | under 20,000 chars |
 | Actions (plugins) | 1–10 |
 | WebSearch sites | 4 |
 | TeamsMessages URLs | 5 |
@@ -1108,11 +1135,13 @@ Requires Agents Toolkit v6.0+.
 | Disclaimer text | 500 chars |
 | All string properties (default) | 4,000 chars |
 
-### Array Limits (v1.6)
+### Array Limits (v1.9)
 
 | Array | Max Items |
 |-------|-----------|
-| conversation_starters | 6 |
+| conversation_starters | 12 |
+| agent_skills | 8 |
+| editorial_answers.answers | 300 |
 | actions | 10 |
 | WebSearch sites | 4 |
 | TeamsMessages urls | 5 |
@@ -1125,16 +1154,17 @@ Requires Agents Toolkit v6.0+.
 
 | File | Latest Version | Schema URL |
 |------|---------------|------------|
-| declarativeAgent.json | v1.6 | `https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/schema.json` |
-| apiPlugin.json | v2.4 (recommended v2.2+) | `https://aka.ms/json-schemas/copilot/plugin/v2.2/schema.json` |
-| manifest.json | v1.24 | `https://developer.microsoft.com/json-schemas/teams/vDevPreview/MicrosoftTeams.schema.json` |
+| declarativeAgent.json | v1.9 | `https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json` |
+| apiPlugin.json | v2.4 | `https://developer.microsoft.com/json-schemas/copilot/plugin/v2.4/schema.json` |
+| manifest.json | 1.30 | `https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json` |
 
 ### Capability Name Values
 
 ```
 WebSearch, OneDriveAndSharePoint, GraphConnectors, GraphicArt,
-CodeInterpreter, Dataverse, TeamsMessages, Email, People,
-ScenarioModels, Meetings, EmbeddedKnowledge
+CodeInterpreter, Dataverse, TeamsMessages, Email, EmailActions,
+People, ScenarioModels, Meetings, MeetingActions, Fabric,
+EmbeddedKnowledge
 ```
 
 ### HTTP Method → isConsequential Default
@@ -1159,10 +1189,12 @@ Efficient, Nerdy, Cynical
 - [Best practices for building declarative agents](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-agent-best-practices)
 - [Write Instructions for Declarative Agents with API plugins](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/instructions-api-plugins)
 - [Declarative Agents overview](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/overview-declarative-agent)
+- [Declarative agent schema v1.9](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-agent-manifest-1.9)
+- [Agent skills for declarative agents](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-agent-skills)
 - [Declarative agent schema v1.6](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-agent-manifest-1.6)
 - [Declarative agent schema v1.5](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-agent-manifest-1.5)
 - [Declarative agent architecture](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-agent-architecture)
 - [API plugins overview](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/overview-api-plugins)
-- [API plugin manifest schema v2.2](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/api-plugin-manifest-2.2)
+- [API plugin manifest schema v2.4](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/plugin-manifest-2.4)
 - [OpenAPI document guidance](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/openapi-document-guidance)
 - [Model changes in GPT 5.1+](https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/declarative-model-migration-overview)

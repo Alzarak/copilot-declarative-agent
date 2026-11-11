@@ -1,0 +1,24 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/plugin/v2.4/schema.json",
+  "schema_version": "v2.4",
+  "name_for_human": "Tickets",
+  "namespace": "tickets",
+  "description_for_human": "Look up service desk tickets.",
+  "description_for_model": "Use this plugin to search and read service desk tickets.",
+  "functions": [],
+  "runtimes": [
+    {
+      "type": "RemoteMCPServer",
+      "auth": {
+        "type": "OAuthPluginVault",
+        "reference_id": "${{MCP_AUTH_ID}}"
+      },
+      "spec": {
+        "url": "https://mcp.contoso.example.com/mcp"
+      },
+      "run_for_functions": [
+        "*"
+      ]
+    }
+  ]
+}

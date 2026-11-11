@@ -16,7 +16,7 @@ When asked to validate an appPackage:
 4. **Verify cross-references** between files (file paths, function names, operationIds)
 5. **Check schema version currency** against known current versions
 6. **Check field limits** (character counts, array sizes)
-7. **Validate new v1.6 properties** (behavior_overrides, disclaimer, worker_agents, user_overrides)
+7. **Validate version-gated properties** (behavior_overrides, disclaimer, worker_agents, user_overrides, editorial_answers, agent_skills) against the declared schema version
 8. **Report findings** with specific issues and recommendations
 
 Or run the validation script:
@@ -36,7 +36,7 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/validate_apppackage.py [path_to_apppackage]
 
 ### manifest.json
 - [ ] Valid JSON syntax
-- [ ] `manifestVersion` is "1.24" or compatible
+- [ ] `manifestVersion` is "1.30" or compatible (older versions warn; root `agentSkills` needs 1.28+)
 - [ ] `id` is valid UUID format
 - [ ] `version` follows semantic versioning
 - [ ] `developer` has all required fields (name, websiteUrl, privacyUrl, termsOfUseUrl)
@@ -48,13 +48,18 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/validate_apppackage.py [path_to_apppackage]
 
 ### declarativeAgent.json
 - [ ] Valid JSON syntax
-- [ ] `version` is valid schema version (e.g., "v1.6")
+- [ ] `version` is a valid schema version with `v` prefix (current "v1.9"; older versions warn, not fail)
+- [ ] `$schema` URL version matches `version`
+- [ ] No unrecognized top-level properties (they invalidate the whole document)
+- [ ] No property or capability newer than the declared version
 - [ ] `name` exists and <= 100 characters
 - [ ] `description` exists and <= 1000 characters
 - [ ] `instructions` exists and <= 8000 characters
 - [ ] `instructions` uses Markdown formatting (headers, lists)
-- [ ] `capabilities` items have valid `name` (one of 12 known types)
-- [ ] `conversation_starters` max 6 items (v1.6 limit, reduced from 12)
+- [ ] `capabilities` items have valid `name` (one of 15 known types), max one of each
+- [ ] Name-only capabilities (GraphicArt, CodeInterpreter, EmailActions, MeetingActions, Fabric) have no extra properties
+- [ ] `conversation_starters` max 12 items (v1.7+); v1.6 agents over 6 get a warning (Microsoft's v1.6 docs conflict)
+- [ ] `conversation_starters[].depends_on` items are `{name: "capabilities", id}` and name a declared capability
 - [ ] `conversation_starters` items have `text` field
 - [ ] `actions` array: 1–10 items, each with `id` and `file`
 - [ ] Referenced action files exist
@@ -62,6 +67,15 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/validate_apppackage.py [path_to_apppackage]
 - [ ] `disclaimer.text` <= 500 characters (if present)
 - [ ] `worker_agents` items have `id` (if present)
 - [ ] `user_overrides` items have `path` and `allowed_actions` (if present)
+- [ ] `behavior_overrides.default_response_mode` is `Auto`, `Quick response` or `Think deeper` (if present)
+- [ ] `editorial_answers` has exactly one of `url` / `answers`; answers max 300 (if present)
+
+### agent_skills (v1.9)
+- [ ] Max 8 items, each with only `folder`
+- [ ] `folder` is relative, uses forward slashes, has no `../`, and resolves inside the app package
+- [ ] Each folder exists and contains `SKILL.md`
+- [ ] `SKILL.md` has YAML frontmatter with `name` and `description`, and is under 20,000 characters
+- [ ] Skill files are allowed types, nested no deeper than 3, and total ≤ 350 across all skills
 
 ### apiPlugin.json
 - [ ] Valid JSON syntax
@@ -71,11 +85,12 @@ python ${CLAUDE_PLUGIN_ROOT}/scripts/validate_apppackage.py [path_to_apppackage]
 - [ ] `functions` array items have `name` and `description`
 - [ ] Functions with complex behavior have `states.reasoning.instructions`
 - [ ] `runtimes` array items have required fields (type, auth, spec)
-- [ ] `spec.url` references existing file
+- [ ] OpenApi runtimes: `spec.url` references an existing file
 - [ ] Every function name appears in at least one `run_for_functions` array
 - [ ] Every `run_for_functions` entry has a matching function definition
 - [ ] Runtime type is valid: OpenApi, RemoteMCPServer, or LocalPlugin
-- [ ] For RemoteMCPServer: spec has url and optionally mcp_tool_description
+- [ ] RemoteMCPServer: `spec.url` is an absolute (https) URL; `mcp_tool_description` has `file` **or** `tools`, not both; tools have `name`, `description`, `inputSchema`
+- [ ] Dynamic MCP discovery: `functions: []` with `run_for_functions: ["*"]` (wildcards allowed)
 - [ ] `security_info` present if cross-plugin interaction needed
 - [ ] `response_semantics` data_path uses valid JSONPath (if present)
 

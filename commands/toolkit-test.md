@@ -1,6 +1,6 @@
 ---
 description: Test/preview a declarative agent using the M365 Agents Toolkit CLI (atk provision + deploy + preview)
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "Agent"]
+allowed-tools: Bash, Read, Glob, Grep, Agent
 argument-hint: "[--env local] [--host teams|outlook|office] [--browser chrome|edge]"
 ---
 

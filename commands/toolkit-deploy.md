@@ -1,6 +1,6 @@
 ---
 description: Deploy and publish a declarative agent using the M365 Agents Toolkit CLI (atk provision + deploy + publish)
-allowed-tools: ["Bash", "Read", "Glob", "Grep", "AskUserQuestion", "Agent"]
+allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, Agent
 argument-hint: "[--env dev] [--publish]"
 ---
 
@@ -15,13 +15,13 @@ Deploy a declarative agent to a target environment and optionally publish to the
    - Run `atk provision --env <env>`
    - Run `atk deploy --env <env>`
    - Run `atk package --env <env>`
-   - Run `atk publish --env <env>` (only if `--publish` flag or user confirms)
+   - Run `atk publish --env <env>` (only if this session passed a confirmed publish request)
    - Post-deployment verification
    - Report results with rollback instructions if needed
 
-2. Pass environment and publish preference from arguments to the agent.
+2. **Before dispatching, confirm with the user (AskUserQuestion) if publishing is requested** — it submits to the org catalog. Subagents cannot ask the user, so pass only a confirmed publish request.
 
-3. **Always confirm with the user before publishing** — it submits to the org catalog.
+3. Pass the environment and the confirmed publish choice to the agent. If it stops on warnings, ask the user whether to proceed and dispatch it again.
 
 ## CLI Reference
 

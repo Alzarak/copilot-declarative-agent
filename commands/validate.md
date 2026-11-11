@@ -1,6 +1,6 @@
 ---
 description: Validate a Microsoft 365 Copilot Declarative Agent appPackage for correctness
-allowed-tools: ["Read", "Bash", "Glob", "Grep"]
+allowed-tools: Read, Bash, Glob, Grep
 argument-hint: "[path_to_apppackage]"
 ---
 
