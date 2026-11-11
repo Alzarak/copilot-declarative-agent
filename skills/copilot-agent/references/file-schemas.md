@@ -4,10 +4,21 @@
 
 | File | Field | Current Version | Schema URL |
 |------|-------|-----------------|------------|
-| manifest.json | `manifestVersion` | `1.24` | `https://developer.microsoft.com/json-schemas/teams/v1.24/MicrosoftTeams.schema.json` |
-| declarativeAgent.json | `version` | `v1.6` | `https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/schema.json` |
+| manifest.json | `manifestVersion` | `1.30` | `https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json` |
+| declarativeAgent.json | `version` | `v1.9` | `https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json` |
 | apiPlugin.json | `schema_version` | `v2.4` | `https://aka.ms/json-schemas/copilot/plugin/v2.4/schema.json` |
 | apiDefinition.json | `openapi` | `3.0.0` | OpenAPI specification |
+
+Older declarative agent versions (v1.0–v1.8) are still accepted; the validator warns and flags any feature newer than the declared version. Root-level `agentSkills` in manifest.json needs manifestVersion 1.28+.
+
+### Declarative agent version history
+
+| Version | Added |
+|---------|-------|
+| v1.9 | `agent_skills` (max 8), `Fabric` capability |
+| v1.8 | `EmailActions` and `MeetingActions` capabilities |
+| v1.7 | `editorial_answers`, `behavior_overrides.default_response_mode`, `conversation_starters[].depends_on`; conversation starters max 12 |
+| v1.6 | `sensitivity_label`, `worker_agents`, `user_overrides`, `EmbeddedKnowledge`, `Meetings.items_by_id`, `People.include_related_content`, `Email.group_mailboxes` |
 
 ## Runtime Limits
 
@@ -25,12 +36,12 @@ Optimize for ~66% of technical limits due to external overhead.
 
 ---
 
-## manifest.json (Teams App Manifest v1.24)
+## manifest.json (Microsoft 365 App Manifest v1.30)
 
 ```json
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.24/MicrosoftTeams.schema.json",
-  "manifestVersion": "1.24",
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.30",
   "id": "00000000-0000-0000-0000-000000000000",
   "version": "1.0.0",
   "developer": {
@@ -84,30 +95,49 @@ Optimize for ~66% of technical limits due to external overhead.
 
 ---
 
-## declarativeAgent.json (v1.6)
+## declarativeAgent.json (v1.9)
 
 ```json
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/schema.json",
-  "version": "v1.6",
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json",
+  "version": "v1.9",
   "id": "agentIdentifier",
   "name": "My Agent",
   "description": "What this agent does and when to use it.",
   "instructions": "# Role\nYou are a helpful assistant.\n\n# Workflow\n## Step 1\n...",
   "capabilities": [
     { "name": "WebSearch" },
-    { "name": "CodeInterpreter" }
+    { "name": "CodeInterpreter" },
+    { "name": "EmailActions" }
   ],
   "conversation_starters": [
     { "title": "Get started", "text": "How can you help me?" },
-    { "title": "Search", "text": "Find information about..." }
+    { "title": "Search", "text": "Find information about..." },
+    {
+      "title": "Tidy inbox",
+      "text": "Archive the resolved threads in my inbox",
+      "depends_on": [{ "name": "capabilities", "id": "EmailActions" }]
+    }
   ],
   "actions": [
     { "id": "myApiPlugin", "file": "apiPlugin.json" }
   ],
+  "agent_skills": [
+    { "folder": "skills/ticket-triage" }
+  ],
   "behavior_overrides": {
     "suggestions": { "disabled": false },
-    "special_instructions": { "discourage_model_knowledge": false }
+    "special_instructions": { "discourage_model_knowledge": false },
+    "default_response_mode": "Auto"
+  },
+  "editorial_answers": {
+    "answers": [
+      {
+        "question": "What are support hours?",
+        "answer": "8am-6pm ET, Monday to Friday.",
+        "similarity_thresholds": { "min": 6, "max": 10 }
+      }
+    ]
   },
   "disclaimer": {
     "text": "This agent provides estimates only. Verify important information independently."
@@ -131,22 +161,29 @@ Optimize for ~66% of technical limits due to external overhead.
 
 | Field | Limit | Required |
 |-------|-------|----------|
-| `version` | Schema version string | Yes |
+| `$schema` | Must point at the same version as `version` | Yes (atk validate) |
+| `version` | Schema version string with `v` prefix | Yes |
 | `name` | 100 chars | Yes |
 | `description` | 1,000 chars | Yes |
 | `instructions` | 8,000 chars | Yes |
 | `capabilities` | Array of capability objects | No |
-| `conversation_starters` | Max **6** items (reduced from 12 in v1.2) | No |
-| `actions` | 1–10 items | No |
-| `behavior_overrides` | Object | No (v1.6) |
+| `conversation_starters` | Max **12** items (v1.7+; v1.6 docs conflict between 6 and 12) | No |
+| `conversation_starters[].depends_on` | `[{ "name": "capabilities", "id": "<Capability>" }]` | No (v1.7) |
+| `actions` | 1–10 items; each `{id, file}` or an inline plugin manifest | No |
+| `agent_skills` | Max **8** `{ "folder" }` items — see Agent Skills below | No (v1.9) |
+| `behavior_overrides` | Object | No |
+| `behavior_overrides.default_response_mode` | `Auto` \| `Quick response` \| `Think deeper` | No (v1.7) |
+| `editorial_answers` | `url` **or** `answers` (max 300; `question`, `answer`, `similarity_thresholds` 0–10) | No (v1.7) |
 | `disclaimer.text` | 500 chars, min 1 non-whitespace | No (v1.6) |
-| `worker_agents` | Array of {id} objects | No (v1.6, preview) |
+| `worker_agents` | Array of {id} objects | No (v1.6, preview; v1.8+ docs call `id` optional but define no alternative — keep it) |
 | `user_overrides` | Array, only "remove" action | No (v1.6) |
 | `sensitivity_label.id` | GUID | No (v1.6, not yet enabled) |
 
-### 12 Capability Types
+**Any property not in the schema makes the whole document invalid** — the validator errors on unknown top-level keys.
 
-WebSearch, OneDriveAndSharePoint, GraphConnectors, GraphicArt, CodeInterpreter, Dataverse, TeamsMessages, Email, People, ScenarioModels, Meetings, EmbeddedKnowledge
+### 15 Capability Types (max one of each)
+
+WebSearch, OneDriveAndSharePoint, GraphConnectors, GraphicArt, CodeInterpreter, Dataverse, TeamsMessages, Email, EmailActions (v1.8), People, ScenarioModels, Meetings, MeetingActions (v1.8), Fabric (v1.9), EmbeddedKnowledge
 
 See `capabilities.md` for full configuration details.
 
@@ -159,11 +196,87 @@ Localizable strings support `[[key_name]]` syntax resolved from localization fil
 
 ---
 
+## Agent Skills (v1.9)
+
+Agent skills package reusable instructions, reference files and scripts that the agent loads only when a task needs them. Declare them with the top-level `agent_skills` array in declarativeAgent.json (schema **v1.9 required**).
+
+```json
+"agent_skills": [
+  { "folder": "./skills/ticket-triage" },
+  { "folder": "skills/escalation-policy" }
+]
+```
+
+### `agent_skills` rules
+
+| Rule | Value |
+|------|-------|
+| Max skills per agent | **8** |
+| Item properties | `folder` only (string, required, non-empty) |
+| `folder` path | Relative to declarativeAgent.json, forward slashes only, no `../`, must resolve to a directory **inside** the app package |
+| `SKILL.md` | Required in every skill folder |
+| `SKILL.md` frontmatter | YAML with `name` and `description` |
+| `SKILL.md` length | Under **20,000** characters |
+| Directory depth inside a skill | Max **3** |
+| Files across all skills | Max **350** |
+| App package size (Agents Toolkit) | 10 MB total; skills ship as folders, not .zip |
+| Reuse across agents | Not supported — each agent carries its own copy |
+
+### Folder layout
+
+```
+appPackage/
+├── declarativeAgent.json
+└── skills/
+    └── ticket-triage/
+        ├── SKILL.md
+        ├── references/priority-matrix.md
+        └── scripts/sla.py
+```
+
+### SKILL.md
+
+```markdown
+---
+name: ticket-triage
+description: Classify an incoming service desk email by priority and queue, then suggest a first reply.
+---
+
+# Ticket triage
+1. Read the email and identify the affected user, device and symptom.
+2. Assign a priority using `references/priority-matrix.md`.
+3. Draft a short first reply.
+```
+
+Microsoft only states that the frontmatter needs "name and description". The Agent Skills convention (lowercase-hyphen `name` matching the folder, max 64 chars; `description` max 1,024 chars) is a good default; the validator warns, not errors, when `name` departs from it.
+
+### Allowed file types
+
+- **Content:** .json .xml .yaml .yml .ini .config .utf8 .docx .doc .docm .pdf .txt .rtf .md .ppt .pptx .ppsm .xlsx .xls .xlsm .csv .tsv .html .htm .png .jpg .jpeg .gif .bmp .log
+- **Scripts:** .py .js .mjs .cjs .ts .mts .sh .bash
+
+### Script sandbox
+
+Scripts run with no network access, no package installs and no authenticated calls. They can only use packages already in the sandbox and cannot call connectors, plugins or MCP servers — put live data access in an action, not a skill.
+
+### Agents Toolkit
+
+- Set `TEAMSFX_AGENT_SKILLS=true`.
+- `atk add skill --name <name> --description "<text>"` or `atk add skill --from <path>`; default location is `./appPackage/skills/<name>/SKILL.md`.
+- The Microsoft 365 app manifest also has a root-level `agentSkills` array (manifest **1.28+**, same `{ "folder" }` shape, max 256 chars). Use `agent_skills` in declarativeAgent.json for skills scoped to one agent.
+
+### Other notes
+
+- Sensitivity labels on skill files are honored; user-defined permissions and Double Key Encryption are not supported.
+- In tenants using Purview Information Barriers, admins can deploy agents with skills but end users cannot add skills to agents they build.
+
+---
+
 ## apiPlugin.json (v2.4)
 
 ```json
 {
-  "$schema": "https://aka.ms/json-schemas/copilot/plugin/v2.4/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/plugin/v2.4/schema.json",
   "schema_version": "v2.4",
   "name_for_human": "My API Tools",
   "namespace": "myApi",
@@ -229,7 +342,7 @@ Localizable strings support `[[key_name]]` syntax resolved from localization fil
 | `description_for_human` | 100 chars | No |
 | `description_for_model` | **2,048 chars** (CRITICAL) | No |
 | `namespace` | String | No |
-| `functions` | Array | Yes |
+| `functions` | Array (may be `[]` for MCP dynamic discovery) | Yes |
 | `functions[].name` | Must match operationId | Yes |
 | `functions[].description` | ~4,000 chars | Yes |
 | `runtimes` | Array | Yes |
@@ -239,7 +352,7 @@ Localizable strings support `[[key_name]]` syntax resolved from localization fil
 | Type | Purpose |
 |------|---------|
 | `OpenApi` | Standard OpenAPI-based API calls |
-| `RemoteMCPServer` | Model Context Protocol server (v2.4) |
+| `RemoteMCPServer` | Remote Model Context Protocol server (v2.4) — `spec.url` is the server's absolute URL, not a package file |
 | `LocalPlugin` | Office Add-in integration |
 
 ### RemoteMCPServer Runtime
@@ -247,7 +360,7 @@ Localizable strings support `[[key_name]]` syntax resolved from localization fil
 ```json
 {
   "type": "RemoteMCPServer",
-  "auth": { "type": "none" },
+  "auth": { "type": "None" },
   "run_for_functions": ["getWeather"],
   "spec": {
     "url": "https://weather.contoso.com/mcp",
@@ -271,7 +384,25 @@ Localizable strings support `[[key_name]]` syntax resolved from localization fil
 Three MCP modes:
 1. **Inline tools**: Define `tools` array in `mcp_tool_description`
 2. **File reference**: `"file": "mcp-tools.json"` in `mcp_tool_description`
-3. **Dynamic discovery**: Omit `mcp_tool_description`; server calls `tools/list`
+3. **Dynamic discovery**: Omit `mcp_tool_description`, set `"functions": []` and `"run_for_functions": ["*"]`; Copilot calls `tools/list` at runtime
+
+Rules: `spec.url` must be absolute; `file` and `tools` are mutually exclusive; each tool needs `name`, `description` and `inputSchema`; `run_for_functions` accepts wildcards. The v2.4 runtime table marks `auth` required while Microsoft's MCP examples omit it — always include it (`{ "type": "None" }` for open servers).
+
+Dynamic discovery (no tool list in the package):
+
+```json
+{
+  "schema_version": "v2.4",
+  "name_for_human": "Tickets",
+  "functions": [],
+  "runtimes": [{
+    "type": "RemoteMCPServer",
+    "auth": { "type": "OAuthPluginVault", "reference_id": "${{MCP_AUTH_ID}}" },
+    "spec": { "url": "https://mcp.contoso.com/mcp" },
+    "run_for_functions": ["*"]
+  }]
+}
+```
 
 ### Auth Types
 
@@ -279,7 +410,7 @@ Three MCP modes:
 |------|-------|
 | `OAuthPluginVault` | Azure AD with `reference_id` |
 | `ApiKeyPluginVault` | API key-based auth (reference_id from Teams Developer Portal registration) |
-| `none` | No authentication |
+| `None` | No authentication |
 
 ### Function States
 

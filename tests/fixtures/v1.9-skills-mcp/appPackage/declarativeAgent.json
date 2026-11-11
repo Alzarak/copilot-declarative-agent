@@ -1,0 +1,121 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json",
+  "version": "v1.9",
+  "id": "serviceDeskAgent",
+  "name": "Service Desk Agent",
+  "description": "Triages service desk email, schedules follow-ups and looks up tickets over MCP.",
+  "instructions": "# OBJECTIVE\nYou help employees answer questions about service desk tickets.\n\n# RESPONSE RULES\n- Ask one clarifying question at a time.\n- Confirm before taking any action that changes data.\n\n# WORKFLOW\n## Step 1: Understand the request\n- **Goal:** Identify what the user needs.\n- **Action:** Use `ticketing` to look up the relevant records.\n- **Transition:** Move to Step 2 once you have the data.\n\n## Step 2: Answer\n- **Goal:** Give a clear answer.\n- **Action:** Summarize the result in bullets.\n- **Transition:** Ask if anything else is needed.\n\n# OUTPUT FORMATTING RULES\n- Use bullets for actions and tables for structured data.\n\n# EXAMPLES\n## Valid Example\n**User:** \"Where is my ticket?\"\n**Assistant:** \"Which ticket number?\"\n\n## Invalid Example\n- Listing every record without asking a clarifying question.\n",
+  "capabilities": [
+    {
+      "name": "Email",
+      "folders": [
+        {
+          "folder_id": "inbox"
+        }
+      ]
+    },
+    {
+      "name": "EmailActions"
+    },
+    {
+      "name": "MeetingActions"
+    },
+    {
+      "name": "Fabric"
+    },
+    {
+      "name": "WebSearch",
+      "sites": [
+        {
+          "url": "https://learn.microsoft.com/microsoft-365"
+        }
+      ]
+    }
+  ],
+  "conversation_starters": [
+    {
+      "title": "Starter 1",
+      "text": "Sample prompt number 1"
+    },
+    {
+      "title": "Starter 2",
+      "text": "Sample prompt number 2"
+    },
+    {
+      "title": "Starter 3",
+      "text": "Sample prompt number 3"
+    },
+    {
+      "title": "Starter 4",
+      "text": "Sample prompt number 4"
+    },
+    {
+      "title": "Starter 5",
+      "text": "Sample prompt number 5"
+    },
+    {
+      "title": "Starter 6",
+      "text": "Sample prompt number 6"
+    },
+    {
+      "title": "Starter 7",
+      "text": "Sample prompt number 7"
+    },
+    {
+      "title": "Starter 8",
+      "text": "Sample prompt number 8"
+    },
+    {
+      "title": "Starter 9",
+      "text": "Sample prompt number 9"
+    },
+    {
+      "title": "Triage inbox",
+      "text": "Flag and archive resolved tickets in my inbox",
+      "depends_on": [
+        {
+          "name": "capabilities",
+          "id": "EmailActions"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "ticketMcp",
+      "file": "apiPlugin-tickets.json"
+    }
+  ],
+  "agent_skills": [
+    {
+      "folder": "./skills/ticket-triage"
+    },
+    {
+      "folder": "skills/escalation-policy"
+    }
+  ],
+  "behavior_overrides": {
+    "suggestions": {
+      "disabled": false
+    },
+    "special_instructions": {
+      "discourage_model_knowledge": false
+    },
+    "default_response_mode": "Think deeper"
+  },
+  "editorial_answers": {
+    "answers": [
+      {
+        "question": "What are support hours?",
+        "answer": "8am-6pm ET, Monday to Friday.",
+        "similarity_thresholds": {
+          "min": 6,
+          "max": 10
+        }
+      }
+    ]
+  },
+  "disclaimer": {
+    "text": "Actions on your mailbox require your confirmation."
+  }
+}

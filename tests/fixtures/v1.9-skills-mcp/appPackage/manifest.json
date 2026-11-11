@@ -1,0 +1,33 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.30",
+  "id": "3f2c1b6e-8a4d-4c2e-9b1f-5d7a6e0c4b21",
+  "version": "1.0.0",
+  "developer": {
+    "name": "Contoso",
+    "websiteUrl": "https://contoso.example.com",
+    "privacyUrl": "https://contoso.example.com/privacy",
+    "termsOfUseUrl": "https://contoso.example.com/terms"
+  },
+  "name": {
+    "short": "Service Desk Agent",
+    "full": "Service Desk Agent"
+  },
+  "description": {
+    "short": "Sample agent for validator tests",
+    "full": "Sample agent used to test the appPackage validator."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#FFFFFF",
+  "copilotAgents": {
+    "declarativeAgents": [
+      {
+        "id": "declarativeAgent",
+        "file": "declarativeAgent.json"
+      }
+    ]
+  }
+}

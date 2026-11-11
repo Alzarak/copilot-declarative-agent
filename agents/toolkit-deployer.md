@@ -7,7 +7,6 @@ tools:
   - Read
   - Glob
   - Grep
-  - AskUserQuestion
 model: sonnet
 color: red
 ---
@@ -45,7 +44,7 @@ Also run the plugin validation:
 python ${CLAUDE_PLUGIN_ROOT}/scripts/validate_apppackage.py <appPackage-path>
 ```
 
-If critical errors are found, stop and report. Ask the user whether to proceed despite warnings.
+If critical errors are found, stop and report. If there are only warnings, stop and return them to the calling session so it can ask the user whether to proceed (subagents cannot ask the user directly).
 
 ### 3. Provision Cloud Resources
 
@@ -82,7 +81,7 @@ This creates the distributable zip in `appPackage/build/`.
 
 ### 6. Publish to Org Catalog (if requested)
 
-Only run if the user explicitly requested publishing:
+Only run if the dispatch context says the user confirmed publishing:
 
 ```bash
 atk publish --env <target-env> --folder <project-root> -i false
@@ -140,7 +139,7 @@ If any step fails:
 
 ## Safety Checks
 
-- **Before publishing**: Confirm with user — publishing affects the org catalog
+- **Before publishing**: Require a user-confirmed publish request in the dispatch context — publishing affects the org catalog. If it is missing, stop and return the question to the calling session
 - **Before provisioning**: Verify the target environment to avoid deploying to wrong env
 - **Cost awareness**: Cloud provisioning may incur Azure costs — note this to the user
 - Always use `-i false` for non-interactive execution

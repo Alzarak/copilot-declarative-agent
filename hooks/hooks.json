@@ -1,13 +1,14 @@
 {
+  "description": "Remind Claude to validate the appPackage after editing its files",
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '/appPackage/|/appPackage$|(manifest|declarativeAgent|apiPlugin|apiDefinition)\\.json$' && echo 'Reminder: run /copilot:validate to check the appPackage for issues.' || true",
-            "timeout": 5
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/apppackage_reminder.py\"",
+            "timeout": 10
           }
         ]
       }

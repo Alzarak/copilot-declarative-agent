@@ -2,7 +2,7 @@
 name: instruction-optimizer
 description: |
   Analyzes and optimizes Microsoft 365 Copilot Declarative Agent instructions for token budget efficiency and proper layer placement. Use this agent when the user wants to optimize their agent instructions, check token usage, migrate from monolithic descriptions, or improve instruction quality.
-whenToUse: |
+
   Trigger when the user asks to optimize, review, or improve their Copilot agent instructions, or when description_for_model appears bloated or instructions seem ineffective.
 
   <example>

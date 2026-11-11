@@ -1,7 +1,7 @@
 ---
 name: copilot-agent
 description: |
-  Create, validate, and manage Microsoft 365 Copilot Declarative Agents. Use this skill whenever the user mentions Copilot agents, declarative agents, appPackage folders, Teams Toolkit, Microsoft 365 Agents Toolkit, TypeSpec agents, or wants to create/validate/update Copilot agent configurations. Trigger on phrases like "create a Copilot agent", "validate my appPackage", "update declarative agent", "check agent manifest", "verify appPackage folder", "add an API tool", "optimize instructions", "add capability", "add a second plugin", "add another plugin", "add-plugin", "multi-MCP agent", "multiple APIs in one agent", "two plugins", "plugin injection limit", "cross-plugin chaining", "add CodeInterpreter", "add WebSearch", "add GraphicArt", "enable capabilities", "file generation disabled", "add knowledge source", or any work related to Copilot extensibility.
+  Create, validate, and manage Microsoft 365 Copilot Declarative Agents. Use this skill whenever the user mentions Copilot agents, declarative agents, appPackage folders, Teams Toolkit, Microsoft 365 Agents Toolkit, TypeSpec agents, or wants to create/validate/update Copilot agent configurations. Trigger on phrases like "create a Copilot agent", "validate my appPackage", "update declarative agent", "check agent manifest", "verify appPackage folder", "add an API tool", "optimize instructions", "add capability", "add a second plugin", "add another plugin", "add-plugin", "multi-MCP agent", "multiple APIs in one agent", "two plugins", "plugin injection limit", "cross-plugin chaining", "add CodeInterpreter", "add WebSearch", "add GraphicArt", "enable capabilities", "file generation disabled", "add knowledge source", "agent skills", "add a skill to my agent", "SKILL.md in appPackage", "EmailActions", "MeetingActions", "Fabric capability", "MCP server action", "update to v1.9", or any work related to Copilot extensibility.
 ---
 
 # Microsoft 365 Copilot Declarative Agent Skill
@@ -18,6 +18,8 @@ Read the appropriate reference file based on the task:
 | Validating an appPackage, troubleshooting issues | `references/validation.md` |
 | Adding a new API tool, creating an agent, modifying files, configuring behavior_overrides/worker_agents | `references/common-tasks.md` |
 | Looking up JSON schemas, field limits, schema versions, runtime limits | `references/file-schemas.md` |
+| Adding agent skills (`agent_skills`, SKILL.md folders, v1.9) | `references/file-schemas.md` → Agent Skills |
+| Adding a Remote MCP server action (`RemoteMCPServer` runtime) | `references/file-schemas.md` → RemoteMCPServer Runtime |
 | Configuring capabilities (WebSearch, CodeInterpreter, Email, etc.) | `references/capabilities.md` |
 | Configuring knowledge sources (SharePoint, Teams, Email, connectors) | `references/knowledge-sources.md` |
 | Building agents with TypeSpec | `references/typespec.md` |
@@ -35,6 +37,8 @@ appPackage/
 ├── declarativeAgent.json   # Declarative agent definition (required)
 ├── apiPlugin.json          # API plugin configuration (optional, for actions)
 ├── apiDefinition.json      # OpenAPI specification (optional, with apiPlugin)
+├── skills/                 # Agent skills (optional, v1.9) — one folder per skill
+│   └── <skill-name>/SKILL.md
 ├── color.png               # Color icon 192x192 (required)
 └── outline.png             # Outline icon 32x32 (required)
 ```
@@ -83,16 +87,23 @@ Copilot provides **five layers** for guiding behavior. Distribute guidance to th
 | agent `name` | 100 chars |
 | agent `description` | 1000 chars |
 | agent `instructions` | 8000 chars |
-| agent `conversation_starters` | 6 items max |
+| agent `conversation_starters` | 12 items max (v1.7+) |
+| agent `agent_skills` | 8 items max (v1.9) |
 | agent `actions` | 1–10 items |
 | `description_for_model` | 2048 chars |
 | `disclaimer.text` | 500 chars |
 | color.png | 192x192 px |
 | outline.png | 32x32 px |
 
-## 12 Capability Types (v1.6)
+## 15 Capability Types (v1.9)
 
-WebSearch, OneDriveAndSharePoint, GraphConnectors, GraphicArt, CodeInterpreter, Dataverse, TeamsMessages, Email, People, ScenarioModels, Meetings, EmbeddedKnowledge (not yet available)
+WebSearch, OneDriveAndSharePoint, GraphConnectors, GraphicArt, CodeInterpreter, Dataverse, TeamsMessages, Email, EmailActions (v1.8), People, ScenarioModels, Meetings, MeetingActions (v1.8), Fabric (v1.9), EmbeddedKnowledge (not yet available)
+
+`Email` is read-only search; `EmailActions` is the separate write capability (triage, send, delete, rules) and ignores `Email` scoping.
+
+## Agent Skills (v1.9)
+
+Top-level `agent_skills` array (max 8) of `{ "folder": "skills/<name>" }`. Each folder sits inside the app package and contains a `SKILL.md` with `name` and `description` frontmatter. See `references/file-schemas.md` → Agent Skills.
 
 See `references/capabilities.md` for configuration details.
 
@@ -100,8 +111,8 @@ See `references/capabilities.md` for configuration details.
 
 | File | Current Version | Schema URL |
 |------|-----------------|------------|
-| manifest.json | `1.24` | `https://developer.microsoft.com/json-schemas/teams/v1.24/MicrosoftTeams.schema.json` |
-| declarativeAgent.json | `v1.6` | `https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.6/schema.json` |
+| manifest.json | `1.30` | `https://developer.microsoft.com/json-schemas/teams/v1.30/MicrosoftTeams.schema.json` |
+| declarativeAgent.json | `v1.9` | `https://developer.microsoft.com/json-schemas/copilot/declarative-agent/v1.9/schema.json` |
 | apiPlugin.json | `v2.4` | `https://aka.ms/json-schemas/copilot/plugin/v2.4/schema.json` |
 | apiDefinition.json | `3.0.0` | OpenAPI specification |
 

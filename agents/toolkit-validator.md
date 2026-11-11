@@ -73,9 +73,10 @@ Read the appPackage files and check:
 
 **declarativeAgent.json:**
 - `instructions` ≤ 8,000 characters
-- `conversation_starters` ≤ 6 items
+- `conversation_starters` ≤ 12 items (v1.7+)
 - `actions` array has 1-10 items (if present)
-- Schema version is `v1.6`
+- Schema version is `v1.9` (older versions are accepted with a warning)
+- `agent_skills` (if present): ≤ 8 items, each `folder` relative, inside the package, no `../`, containing `SKILL.md`
 
 **apiPlugin.json (if present):**
 - `description_for_model` ≤ 2,048 characters
@@ -89,7 +90,7 @@ Read the appPackage files and check:
 **manifest.json:**
 - `name.short` ≤ 30 characters
 - `description.short` ≤ 80 characters
-- Schema version is `1.24`
+- Schema version is `1.30` (older versions are accepted with a warning; root `agentSkills` needs 1.28+)
 - Icons referenced exist (color.png, outline.png)
 
 ### 8. Report Results

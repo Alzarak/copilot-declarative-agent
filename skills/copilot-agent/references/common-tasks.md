@@ -141,7 +141,8 @@ appPackage/
 ]
 ```
 
-- Max **6** items (v1.6 limit, reduced from 12)
+- Max **12** items in v1.7+ (the v1.6 docs say 6 in one place and 12 in another — keep v1.6 agents to 6)
+- v1.7+: add `depends_on: [{ "name": "capabilities", "id": "EmailActions" }]` to show a starter only when that capability is enabled
 - Include minimum 3 sample prompts reflecting core capabilities
 - Show realistic, useful examples covering different capabilities
 - Keep titles 2-3 words

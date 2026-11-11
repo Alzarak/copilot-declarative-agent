@@ -1,6 +1,6 @@
 ---
 description: Add a new API tool/function to an existing Copilot Declarative Agent (4-file sync)
-allowed-tools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 argument-hint: "[function_name]"
 ---
 

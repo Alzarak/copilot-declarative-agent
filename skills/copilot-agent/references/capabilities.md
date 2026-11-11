@@ -16,9 +16,14 @@ Only add capabilities that align with the agent's goals. Less is more — focuse
 | Dataverse | Yes (Copilot license or metered usage) |
 | TeamsMessages | Yes (license only) |
 | Email | Yes (license only) |
+| EmailActions | Yes (license only) |
 | People | Yes (license only) |
 | Meetings | Yes (license only) |
+| MeetingActions | Yes (license only) |
 | ScenarioModels | Yes |
+| Fabric | Yes |
+
+Microsoft's v1.9 reference: every capability except WebSearch needs a Microsoft 365 Copilot license or metered usage on the tenant. The table above reflects earlier per-capability guidance; treat CodeInterpreter and GraphicArt as license-dependent until confirmed in your tenant.
 
 **Use command**: `/copilot-declarative-agent:add-capability [name]` to add capabilities interactively.
 
@@ -234,7 +239,7 @@ URLs must be valid Teams links to channels, meeting chats, group chats, or 1:1 c
 
 ## 8. Email
 
-Search mailboxes with optional scoping.
+Search mailboxes with optional scoping. **Read-only** — to archive, flag, send, delete or create rules, add `EmailActions` (section 13); `Email` scoping does not carry over to it.
 
 ```json
 {
@@ -355,3 +360,57 @@ Local files bundled in the app package.
 **Supported file types:** .doc, .docx, .ppt, .pptx, .xls, .xlsx, .txt, .pdf
 
 When embedded files are present, the `sensitivity_label` in declarativeAgent.json applies to the agent.
+
+In v1.8+ `files` is **required** (optional in v1.6). Microsoft's sample uses a .csv even though .csv is not on the allowed list — stick to the listed types.
+---
+
+## 13. EmailActions (v1.8)
+
+Lets the agent **act on** the user's mailbox. Name only — no properties.
+
+```json
+{ "name": "EmailActions" }
+```
+
+Supported actions: triage (archive, flag, mark read, pin, move, copy, report junk), supervised send, delete, inbox rules (create and get), automatic replies, folder create and list.
+
+**EmailActions is separate from `Email`.**
+
+| | `Email` | `EmailActions` |
+|---|---|---|
+| Purpose | Read-only search and grounding | Write operations on the mailbox |
+| Scoping (`shared_mailbox`, `group_mailboxes`, `folders`) | Yes | **No — Email scoping does not apply** |
+| Schema version | v1.3+ (scoping v1.6) | v1.8+ |
+
+Add both when the agent must find mail *and* act on it. Because `Email` scoping does not constrain `EmailActions`, put limits on write actions in the agent's instructions (for example "only archive messages in the Support folder; confirm before sending or deleting"). The validator warns when `Email` is scoped and `EmailActions` is present.
+
+---
+
+## 14. MeetingActions (v1.8)
+
+Scheduling actions: create meetings, run time-finding polls, and surface time insights. Name only.
+
+```json
+{ "name": "MeetingActions" }
+```
+
+Separate from the read-only `Meetings` capability (transcripts and meeting content). Microsoft notes the supported actions "may evolve".
+
+---
+
+## 15. Fabric (v1.9)
+
+Grounds the agent in Microsoft Fabric data. Name only — Microsoft documents no scoping properties, so it is unclear which Fabric items or data agents it reaches. Test with real tenant data before relying on it.
+
+```json
+{ "name": "Fabric" }
+```
+
+---
+
+## Rules That Apply to All Capabilities
+
+- Max **one** of each capability type in the `capabilities` array.
+- Name-only capabilities (`GraphicArt`, `CodeInterpreter`, `EmailActions`, `MeetingActions`, `Fabric`) reject extra properties — any unknown property invalidates the manifest.
+- Use `conversation_starters[].depends_on` (v1.7+) to show a starter only when a capability is present, and `user_overrides` to let users remove one.
+

@@ -3,7 +3,8 @@
 Validate Microsoft 365 Copilot Declarative Agent appPackage structure.
 
 Checks file existence, JSON validity, schema versions, field limits,
-cross-references, function sync, and v1.6 property compliance.
+cross-references, function sync, and declarative agent schema compliance
+(v1.0 through v1.9, including v1.9 agent_skills).
 
 Usage:
     python validate_apppackage.py [path_to_apppackage]
@@ -11,6 +12,7 @@ Usage:
 If no path is provided, looks for 'appPackage' in current directory.
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -19,16 +21,57 @@ from pathlib import Path
 from typing import Any
 
 # Known current schema versions
-CURRENT_MANIFEST_VERSION = "1.24"
-CURRENT_DA_VERSION = "v1.6"
+CURRENT_MANIFEST_VERSION = "1.30"
+CURRENT_DA_VERSION = "v1.9"
 CURRENT_PLUGIN_VERSION = "v2.4"
 CURRENT_OPENAPI_VERSION = "3.0"
 
-# All valid capability names in v1.6
-VALID_CAPABILITIES = {
-    "WebSearch", "OneDriveAndSharePoint", "GraphConnectors",
-    "GraphicArt", "CodeInterpreter", "Dataverse", "TeamsMessages",
-    "Email", "People", "ScenarioModels", "Meetings", "EmbeddedKnowledge",
+# Declarative agent schema versions this validator knows about. Older versions
+# are accepted with a warning; features are checked against the declared version.
+KNOWN_DA_VERSIONS = ["v1.0", "v1.2", "v1.3", "v1.4", "v1.5", "v1.6", "v1.7", "v1.8", "v1.9"]
+
+# Valid capability names (v1.9) mapped to the schema version that introduced them
+CAPABILITY_MIN_VERSION = {
+    "WebSearch": "v1.0",
+    "OneDriveAndSharePoint": "v1.0",
+    "GraphConnectors": "v1.0",
+    "GraphicArt": "v1.2",
+    "CodeInterpreter": "v1.2",
+    "Dataverse": "v1.3",
+    "TeamsMessages": "v1.3",
+    "Email": "v1.3",
+    "People": "v1.3",
+    "ScenarioModels": "v1.4",
+    "Meetings": "v1.5",
+    "EmbeddedKnowledge": "v1.6",
+    "EmailActions": "v1.8",
+    "MeetingActions": "v1.8",
+    "Fabric": "v1.9",
+}
+VALID_CAPABILITIES = set(CAPABILITY_MIN_VERSION)
+
+# Capabilities that take no properties other than "name"
+NAME_ONLY_CAPABILITIES = {"GraphicArt", "CodeInterpreter", "EmailActions", "MeetingActions", "Fabric"}
+
+# Top-level declarativeAgent.json properties mapped to the version that introduced them.
+# Microsoft: "Any unrecognized property makes the whole document invalid."
+DA_PROPERTY_MIN_VERSION = {
+    "$schema": "v1.0",
+    "version": "v1.0",
+    "id": "v1.0",
+    "name": "v1.0",
+    "description": "v1.0",
+    "instructions": "v1.0",
+    "capabilities": "v1.0",
+    "conversation_starters": "v1.0",
+    "actions": "v1.0",
+    "behavior_overrides": "v1.5",
+    "disclaimer": "v1.5",
+    "sensitivity_label": "v1.6",
+    "worker_agents": "v1.6",
+    "user_overrides": "v1.6",
+    "editorial_answers": "v1.7",
+    "agent_skills": "v1.9",
 }
 
 # Capability-specific array limits
@@ -39,6 +82,35 @@ CAPABILITY_LIMITS = {
     "Meetings": {"items_by_id": 5},
     "EmbeddedKnowledge": {"files": 10},
 }
+
+# behavior_overrides.default_response_mode (v1.7+) — exact strings, spaces included
+VALID_RESPONSE_MODES = {"Auto", "Quick response", "Think deeper"}
+
+# Agent skills (v1.9) limits from learn.microsoft.com declarative-agent-skills
+AGENT_SKILLS_MAX = 8
+SKILL_MD_MAX_CHARS = 20_000
+SKILL_MAX_DEPTH = 3
+SKILLS_MAX_FILES = 350
+APP_PACKAGE_MAX_BYTES = 10 * 1024 * 1024
+SKILL_ALLOWED_EXTENSIONS = {
+    # content
+    ".json", ".xml", ".yaml", ".yml", ".ini", ".config", ".utf8", ".docx", ".doc",
+    ".docm", ".pdf", ".txt", ".rtf", ".md", ".ppt", ".pptx", ".ppsm", ".xlsx",
+    ".xls", ".xlsm", ".csv", ".tsv", ".html", ".htm", ".png", ".jpg", ".jpeg",
+    ".gif", ".bmp", ".log",
+    # scripts
+    ".py", ".js", ".mjs", ".cjs", ".ts", ".mts", ".sh", ".bash",
+}
+
+
+def _version_tuple(version: str) -> tuple[int, ...] | None:
+    """Parse 'v1.9' / '1.9' into (1, 9). Returns None if unparseable."""
+    m = re.fullmatch(r"v?(\d+)\.(\d+)", str(version).strip())
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _is_absolute_url(value: str) -> bool:
+    return bool(re.match(r"^https?://", str(value), re.I))
 
 # Valid security_info.data_handling values
 VALID_DATA_HANDLING_VALUES = {
@@ -120,7 +192,8 @@ class AppPackageValidator:
             else:
                 self.warnings.append(
                     f"manifest.json manifestVersion '{data['manifestVersion']}' differs from "
-                    f"known current version '{CURRENT_MANIFEST_VERSION}'"
+                    f"known current version '{CURRENT_MANIFEST_VERSION}' (still accepted; "
+                    f"root-level agentSkills needs 1.28+)"
                 )
 
         # Validate UUID format
@@ -172,8 +245,37 @@ class AppPackageValidator:
         else:
             self.errors.append("manifest.json missing copilotAgents.declarativeAgents")
 
+        # Root-level agentSkills (app manifest 1.28+), same {folder} shape as agent_skills
+        if "agentSkills" in data:
+            mv = _version_tuple(data.get("manifestVersion", ""))
+            if mv and mv < (1, 28):
+                self.errors.append(
+                    f"manifest.json uses 'agentSkills', which requires manifestVersion 1.28 or later"
+                )
+            self._validate_agent_skills(data["agentSkills"], "manifest.json agentSkills")
+
+    # Features whose minimum version is v1.7 or later come from Microsoft's
+    # published change lists and are enforced as errors. Older minimums are
+    # reported as warnings because Microsoft no longer documents them precisely.
+    _STRICT_GATE_FROM = (1, 7)
+
+    def _gate(self, feature: str, min_version: str, declared: tuple[int, ...] | None):
+        """Report a feature used with a declared schema version older than it requires."""
+        if declared is None:
+            return
+        needed = _version_tuple(min_version)
+        if needed and declared < needed:
+            msg = (
+                f"declarativeAgent.json uses {feature}, which requires schema {min_version} "
+                f"or later (declared v{declared[0]}.{declared[1]}). Run update-schema."
+            )
+            if needed >= self._STRICT_GATE_FROM:
+                self.errors.append(msg)
+            else:
+                self.warnings.append(msg)
+
     def _validate_declarative_agent(self):
-        """Validate declarativeAgent.json structure including v1.6 properties."""
+        """Validate declarativeAgent.json structure (schema v1.0–v1.9)."""
         path = self.package_path / "declarativeAgent.json"
         if not path.exists():
             return
@@ -181,9 +283,12 @@ class AppPackageValidator:
         data = self._load_json(path)
         if not data:
             return
+        if not isinstance(data, dict):
+            self.errors.append("declarativeAgent.json root must be a JSON object")
+            return
 
         # Check required fields
-        required = ["name", "description", "instructions"]
+        required = ["version", "name", "description", "instructions"]
         for field in required:
             if field in data:
                 self.passed.append(f"declarativeAgent.json has '{field}'")
@@ -191,44 +296,85 @@ class AppPackageValidator:
                 self.errors.append(f"declarativeAgent.json missing required field: '{field}'")
 
         # Check $schema property (required by atk validate)
-        expected_schema = f"https://developer.microsoft.com/json-schemas/copilot/declarative-agent/{CURRENT_DA_VERSION}/schema.json"
+        declared_str = str(data.get("version", ""))
+        declared = _version_tuple(declared_str)
+        schema_version = declared_str if declared else CURRENT_DA_VERSION
+        expected_schema = (
+            f"https://developer.microsoft.com/json-schemas/copilot/declarative-agent/"
+            f"{schema_version}/schema.json"
+        )
         if "$schema" in data:
-            self.passed.append(f"declarativeAgent.json has $schema property")
+            self.passed.append("declarativeAgent.json has $schema property")
+            schema_url = str(data["$schema"])
+            m = re.search(r"/declarative-agent/(v\d+\.\d+)/", schema_url)
+            if m and declared_str and m.group(1) != declared_str:
+                self.errors.append(
+                    f"declarativeAgent.json $schema points to {m.group(1)} but version is "
+                    f"'{declared_str}' — they must match"
+                )
         else:
             self.errors.append(
                 f"declarativeAgent.json missing '$schema' property — required by atk validate. "
                 f"Add: \"$schema\": \"{expected_schema}\""
             )
 
-        # Check schema version currency
+        # Schema version: current passes, older warns, unknown/newer warns, malformed errors
         if "version" in data:
-            if data["version"] == CURRENT_DA_VERSION:
+            current = _version_tuple(CURRENT_DA_VERSION)
+            if declared is None:
+                self.errors.append(
+                    f"declarativeAgent.json version '{declared_str}' is not a valid schema "
+                    f"version (expected e.g. '{CURRENT_DA_VERSION}')"
+                )
+            elif not declared_str.startswith("v"):
+                self.errors.append(
+                    f"declarativeAgent.json version '{declared_str}' must include the 'v' "
+                    f"prefix (e.g. 'v{declared[0]}.{declared[1]}')"
+                )
+            elif declared == current:
                 self.passed.append(f"declarativeAgent.json version is current ({CURRENT_DA_VERSION})")
+            elif declared < current:
+                self.warnings.append(
+                    f"declarativeAgent.json version '{declared_str}' is older than the current "
+                    f"'{CURRENT_DA_VERSION}'. Still accepted; run update-schema to use newer features "
+                    f"(agent_skills, EmailActions, MeetingActions, Fabric, editorial_answers)"
+                )
             else:
                 self.warnings.append(
-                    f"declarativeAgent.json version '{data['version']}' differs from "
-                    f"known current version '{CURRENT_DA_VERSION}'"
+                    f"declarativeAgent.json version '{declared_str}' is newer than this validator "
+                    f"knows ('{CURRENT_DA_VERSION}'); newer properties are not checked"
+                )
+            if declared_str and declared_str not in KNOWN_DA_VERSIONS and declared and declared <= current:
+                self.warnings.append(
+                    f"declarativeAgent.json version '{declared_str}' is not a published schema version"
+                )
+
+        # Unknown top-level properties invalidate the whole document
+        newer_than_known = declared is not None and declared > _version_tuple(CURRENT_DA_VERSION)
+        for key in data:
+            if key in DA_PROPERTY_MIN_VERSION:
+                self._gate(f"'{key}'", DA_PROPERTY_MIN_VERSION[key], declared)
+            elif not newer_than_known:
+                self.errors.append(
+                    f"declarativeAgent.json has unrecognized top-level property '{key}' "
+                    f"(Microsoft rejects documents with unknown properties)"
                 )
 
         # Validate field lengths
-        if "name" in data:
-            name_len = len(data["name"])
-            if name_len <= 100:
-                self.passed.append(f"declarativeAgent.json 'name' <= 100 chars ({name_len})")
-            else:
-                self.errors.append(f"declarativeAgent.json 'name' too long ({name_len} chars, max 100)")
-
-        if "description" in data:
-            desc_len = len(data["description"])
-            if desc_len <= 1000:
-                self.passed.append(f"declarativeAgent.json 'description' <= 1000 chars ({desc_len})")
-            else:
-                self.errors.append(
-                    f"declarativeAgent.json 'description' too long ({desc_len} chars, max 1000)"
-                )
+        for field, limit in (("name", 100), ("description", 1000)):
+            if field in data:
+                value = str(data[field])
+                if not value.strip():
+                    self.errors.append(f"declarativeAgent.json '{field}' must not be empty")
+                elif len(value) <= limit:
+                    self.passed.append(f"declarativeAgent.json '{field}' <= {limit} chars ({len(value)})")
+                else:
+                    self.errors.append(
+                        f"declarativeAgent.json '{field}' too long ({len(value)} chars, max {limit})"
+                    )
 
         if "instructions" in data:
-            instr = data["instructions"]
+            instr = str(data["instructions"])
             instr_len = len(instr)
             if instr_len <= 8000:
                 self.passed.append(
@@ -243,18 +389,37 @@ class AppPackageValidator:
             self._check_instruction_quality(instr)
 
         # Validate capabilities
+        cap_names_present: set[str] = set()
         if "capabilities" in data:
+            seen: set[str] = set()
             for i, cap in enumerate(data["capabilities"]):
-                if "name" not in cap:
+                if not isinstance(cap, dict) or "name" not in cap:
                     self.errors.append(f"declarativeAgent.json capabilities[{i}] missing 'name'")
                     continue
                 cap_name = cap["name"]
+                if cap_name in seen:
+                    self.errors.append(
+                        f"declarativeAgent.json lists capability '{cap_name}' more than once "
+                        f"(max one of each type)"
+                    )
+                seen.add(cap_name)
+                cap_names_present.add(cap_name)
                 if cap_name in VALID_CAPABILITIES:
                     self.passed.append(f"declarativeAgent.json has valid capability: {cap_name}")
+                    self._gate(f"capability '{cap_name}'", CAPABILITY_MIN_VERSION[cap_name], declared)
                 else:
-                    self.warnings.append(
-                        f"declarativeAgent.json has unknown capability: {cap_name}"
+                    self.errors.append(
+                        f"declarativeAgent.json has unknown capability: {cap_name}. "
+                        f"Valid ({CURRENT_DA_VERSION}): {sorted(VALID_CAPABILITIES)}"
                     )
+
+                if cap_name in NAME_ONLY_CAPABILITIES:
+                    extra = sorted(k for k in cap if k != "name")
+                    if extra:
+                        self.errors.append(
+                            f"capability '{cap_name}' takes no properties besides 'name' "
+                            f"(found {extra})"
+                        )
 
                 # Check capability-specific limits
                 if cap_name in CAPABILITY_LIMITS:
@@ -280,17 +445,46 @@ class AppPackageValidator:
                                 f"(max 2)"
                             )
 
-        # Validate conversation_starters (v1.6 limit: 6)
+                if cap_name == "ScenarioModels" and "models" not in cap:
+                    self.errors.append("capability 'ScenarioModels' missing required 'models'")
+
+                if cap_name == "EmbeddedKnowledge" and "files" not in cap and declared and declared >= (1, 8):
+                    self.errors.append("capability 'EmbeddedKnowledge' missing required 'files' (v1.8+)")
+
+            # EmailActions is independent of Email: Email scoping does not apply to it
+            if "EmailActions" in cap_names_present:
+                email_cap = next(
+                    (c for c in data["capabilities"] if isinstance(c, dict) and c.get("name") == "Email"),
+                    None,
+                )
+                if email_cap and any(k in email_cap for k in ("shared_mailbox", "group_mailboxes", "folders")):
+                    self.warnings.append(
+                        "Email is scoped (shared_mailbox/group_mailboxes/folders) but that scoping "
+                        "does NOT apply to EmailActions — EmailActions can act on the user's whole "
+                        "mailbox. Constrain write actions in instructions if needed"
+                    )
+
+        # Validate conversation_starters (12 in v1.7+; v1.6 docs conflict — 6 vs 12)
         if "conversation_starters" in data:
             starters = data["conversation_starters"]
-            if len(starters) > 6:
+            if declared == (1, 6):
+                limit, hard = 6, False
+            else:
+                limit, hard = 12, True
+            if len(starters) > 12:
                 self.errors.append(
-                    f"declarativeAgent.json conversation_starters has {len(starters)} items "
-                    f"(max 6 in v1.6)"
+                    f"declarativeAgent.json conversation_starters has {len(starters)} items (max 12)"
                 )
+            elif len(starters) > limit:
+                msg = (
+                    f"declarativeAgent.json conversation_starters has {len(starters)} items; the "
+                    f"v1.6 docs say max {limit} in one place and 12 in another. Upgrade to "
+                    f"{CURRENT_DA_VERSION} (max 12) or trim to {limit}"
+                )
+                (self.errors if hard else self.warnings).append(msg)
             else:
                 self.passed.append(
-                    f"declarativeAgent.json conversation_starters count OK ({len(starters)}/6)"
+                    f"declarativeAgent.json conversation_starters count OK ({len(starters)}/{limit})"
                 )
             for i, starter in enumerate(starters):
                 if "text" in starter:
@@ -299,10 +493,25 @@ class AppPackageValidator:
                     self.errors.append(
                         f"declarativeAgent.json conversation_starter[{i}] missing 'text'"
                     )
+                if "depends_on" in starter:
+                    self._gate(f"conversation_starters[{i}].depends_on", "v1.7", declared)
+                    for dep in starter["depends_on"]:
+                        if dep.get("name") != "capabilities" or "id" not in dep:
+                            self.errors.append(
+                                f"conversation_starter[{i}].depends_on items need "
+                                f"{{\"name\": \"capabilities\", \"id\": \"<CapabilityName>\"}}"
+                            )
+                        elif dep["id"] not in cap_names_present:
+                            self.warnings.append(
+                                f"conversation_starter[{i}] depends on capability '{dep['id']}', "
+                                f"which this agent does not declare — the starter will never show"
+                            )
 
-        # Validate actions (v1.6 limit: 1-10)
+        # Validate actions (1-10)
         if "actions" in data:
             actions = data["actions"]
+            if len(actions) == 0:
+                self.errors.append("declarativeAgent.json actions is empty (min 1 if present)")
             if len(actions) > 10:
                 self.errors.append(
                     f"declarativeAgent.json actions has {len(actions)} items (max 10)"
@@ -310,10 +519,16 @@ class AppPackageValidator:
             for i, action in enumerate(actions):
                 if "id" in action and "file" in action:
                     self.passed.append(f"declarativeAgent.json action[{i}] has id and file")
+                elif "schema_version" in action or "functions" in action:
+                    self.passed.append(f"declarativeAgent.json action[{i}] is an inline plugin manifest")
                 else:
                     self.errors.append(f"declarativeAgent.json action[{i}] missing id or file")
 
-        # Validate behavior_overrides (v1.6)
+        # Validate agent_skills (v1.9)
+        if "agent_skills" in data:
+            self._validate_agent_skills(data["agent_skills"], "declarativeAgent.json agent_skills")
+
+        # Validate behavior_overrides
         if "behavior_overrides" in data:
             bo = data["behavior_overrides"]
             if "suggestions" in bo:
@@ -331,8 +546,17 @@ class AppPackageValidator:
                     )
                 else:
                     self.passed.append("behavior_overrides.special_instructions is valid")
+            if "default_response_mode" in bo:
+                self._gate("behavior_overrides.default_response_mode", "v1.7", declared)
+                if bo["default_response_mode"] in VALID_RESPONSE_MODES:
+                    self.passed.append("behavior_overrides.default_response_mode is valid")
+                else:
+                    self.errors.append(
+                        f"behavior_overrides.default_response_mode '{bo['default_response_mode']}' "
+                        f"is invalid. Valid: {sorted(VALID_RESPONSE_MODES)}"
+                    )
 
-        # Validate disclaimer (v1.6)
+        # Validate disclaimer
         if "disclaimer" in data:
             disclaimer = data["disclaimer"]
             if "text" in disclaimer:
@@ -346,15 +570,45 @@ class AppPackageValidator:
             else:
                 self.errors.append("disclaimer missing required 'text' field")
 
-        # Validate worker_agents (v1.6 preview)
+        # Validate editorial_answers (v1.7)
+        if "editorial_answers" in data:
+            ea = data["editorial_answers"]
+            has_url, has_answers = "url" in ea, "answers" in ea
+            if has_url == has_answers:
+                self.errors.append("editorial_answers must have exactly one of 'url' or 'answers'")
+            if has_answers:
+                answers = ea["answers"]
+                if len(answers) > 300:
+                    self.errors.append(f"editorial_answers.answers has {len(answers)} items (max 300)")
+                for i, ans in enumerate(answers):
+                    if "question" not in ans or "answer" not in ans:
+                        self.errors.append(
+                            f"editorial_answers.answers[{i}] needs both 'question' and 'answer'"
+                        )
+                    thr = ans.get("similarity_thresholds", {})
+                    for k in ("min", "max"):
+                        if k in thr and not (isinstance(thr[k], int) and 0 <= thr[k] <= 10):
+                            self.errors.append(
+                                f"editorial_answers.answers[{i}].similarity_thresholds.{k} "
+                                f"must be an integer 0–10"
+                            )
+                if answers and not any("question" not in a or "answer" not in a for a in answers):
+                    self.passed.append(f"editorial_answers has {len(answers)} valid answer(s)")
+
+        # Validate worker_agents (preview). id is required in v1.6; v1.8+ docs are ambiguous.
         if "worker_agents" in data:
             for i, wa in enumerate(data["worker_agents"]):
                 if "id" in wa:
                     self.passed.append(f"worker_agents[{i}] has 'id'")
+                elif declared and declared >= (1, 8):
+                    self.warnings.append(
+                        f"worker_agents[{i}] has no 'id' — v1.8+ docs mark it optional but "
+                        f"define no alternative property; include 'id'"
+                    )
                 else:
                     self.errors.append(f"worker_agents[{i}] missing required 'id'")
 
-        # Validate user_overrides (v1.6)
+        # Validate user_overrides
         if "user_overrides" in data:
             for i, uo in enumerate(data["user_overrides"]):
                 if "path" not in uo:
@@ -367,6 +621,118 @@ class AppPackageValidator:
                     )
                 if "path" in uo and "allowed_actions" in uo:
                     self.passed.append(f"user_overrides[{i}] is valid")
+
+    def _validate_agent_skills(self, skills: Any, label: str):
+        """Validate an agent_skills / agentSkills array (each item: {"folder": "<relative dir>"})."""
+        if not isinstance(skills, list):
+            self.errors.append(f"{label} must be an array")
+            return
+        if len(skills) > AGENT_SKILLS_MAX:
+            self.errors.append(f"{label} has {len(skills)} items (max {AGENT_SKILLS_MAX})")
+        else:
+            self.passed.append(f"{label} count OK ({len(skills)}/{AGENT_SKILLS_MAX})")
+
+        root = self.package_path.resolve()
+        seen: set[str] = set()
+        total_files = 0
+        for i, skill in enumerate(skills):
+            where = f"{label}[{i}]"
+            if not isinstance(skill, dict) or "folder" not in skill:
+                self.errors.append(f"{where} missing required 'folder'")
+                continue
+            extra = sorted(k for k in skill if k != "folder")
+            if extra:
+                self.errors.append(f"{where} has unrecognized properties {extra} (only 'folder' allowed)")
+            folder = skill["folder"]
+            if not isinstance(folder, str) or not folder.strip():
+                self.errors.append(f"{where}.folder must be a non-empty string")
+                continue
+            if len(folder) > 256:
+                self.errors.append(f"{where}.folder is {len(folder)} chars (max 256)")
+            if "\\" in folder:
+                self.errors.append(f"{where}.folder '{folder}' must use forward slashes only")
+                continue
+            if folder.startswith("/") or re.match(r"^[A-Za-z]:", folder) or _is_absolute_url(folder):
+                self.errors.append(f"{where}.folder '{folder}' must be relative to the manifest")
+                continue
+            if ".." in folder.split("/"):
+                self.errors.append(f"{where}.folder '{folder}' must not contain '../'")
+                continue
+
+            target = (self.package_path / folder).resolve()
+            try:
+                target.relative_to(root)
+            except ValueError:
+                self.errors.append(f"{where}.folder '{folder}' resolves outside the app package")
+                continue
+            key = str(target).lower()
+            if key in seen:
+                self.errors.append(f"{where}.folder '{folder}' is listed more than once")
+            seen.add(key)
+            if not target.is_dir():
+                self.errors.append(f"{where}.folder '{folder}' is not a directory in the app package")
+                continue
+
+            skill_md = target / "SKILL.md"
+            if not skill_md.is_file():
+                self.errors.append(f"{where}.folder '{folder}' has no SKILL.md")
+                continue
+            self.passed.append(f"{where} '{folder}' contains SKILL.md")
+            self._validate_skill_md(skill_md, f"{folder}/SKILL.md", target.name)
+
+            for f in target.rglob("*"):
+                if not f.is_file():
+                    continue
+                total_files += 1
+                rel = f.relative_to(target)
+                if len(rel.parts) - 1 > SKILL_MAX_DEPTH:
+                    self.errors.append(
+                        f"{folder}/{rel.as_posix()} is nested deeper than {SKILL_MAX_DEPTH} directories"
+                    )
+                if f.suffix.lower() not in SKILL_ALLOWED_EXTENSIONS:
+                    self.errors.append(
+                        f"{folder}/{rel.as_posix()} has a file type not allowed in agent skills "
+                        f"('{f.suffix or '(none)'}')"
+                    )
+
+        if total_files > SKILLS_MAX_FILES:
+            self.errors.append(f"agent skills contain {total_files} files (max {SKILLS_MAX_FILES} across all skills)")
+
+    def _validate_skill_md(self, path: Path, label: str, folder_name: str):
+        """Check SKILL.md YAML frontmatter (name, description) and the 20,000-char limit."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception as e:
+            self.errors.append(f"{label} could not be read: {e}")
+            return
+        if len(text) >= SKILL_MD_MAX_CHARS:
+            self.errors.append(f"{label} is {len(text)} chars (must be under {SKILL_MD_MAX_CHARS})")
+        m = re.match(r"^﻿?---\s*\n(.*?)\n---\s*(\n|$)", text, re.S)
+        if not m:
+            self.errors.append(f"{label} has no YAML frontmatter (--- name/description ---)")
+            return
+        front: dict[str, str] = {}
+        for line in m.group(1).splitlines():
+            km = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", line)
+            if km:
+                front[km.group(1)] = km.group(2).strip().strip("'\"")
+        for key in ("name", "description"):
+            if key not in front:
+                self.errors.append(f"{label} frontmatter missing '{key}'")
+        name = front.get("name", "")
+        if name:
+            # Agent Skills standard conventions — not confirmed by Microsoft for Copilot, so warn only
+            if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name) or len(name) > 64:
+                self.warnings.append(
+                    f"{label} name '{name}' does not follow the Agent Skills convention "
+                    f"(lowercase letters, digits, hyphens; max 64)"
+                )
+            elif name != folder_name:
+                self.warnings.append(
+                    f"{label} name '{name}' does not match its folder name '{folder_name}'"
+                )
+            else:
+                self.passed.append(f"{label} frontmatter has name '{name}' and description")
 
     def _check_instruction_quality(self, instructions: str):
         """Check instruction formatting against Microsoft best practices.
@@ -694,9 +1060,12 @@ class AppPackageValidator:
                 self.errors.append(f"{plugin_filename} missing required field: '{field}'")
 
         # Check $schema property (required by atk validate)
-        expected_schema = f"https://developer.microsoft.com/json-schemas/copilot/plugin/v2.4/schema.json"
+        expected_schema = f"https://developer.microsoft.com/json-schemas/copilot/plugin/{CURRENT_PLUGIN_VERSION}/schema.json"
         if "$schema" in data:
-            if data["$schema"] == expected_schema:
+            if data["$schema"] in (
+                expected_schema,
+                f"https://aka.ms/json-schemas/copilot/plugin/{CURRENT_PLUGIN_VERSION}/schema.json",
+            ):
                 self.passed.append(f"{plugin_filename} has correct $schema URL")
             else:
                 self.warnings.append(
@@ -830,31 +1199,38 @@ class AppPackageValidator:
 
         # Validate runtimes
         valid_runtime_types = {"OpenApi", "RemoteMCPServer", "LocalPlugin"}
-        if "runtimes" in data:
-            for i, runtime in enumerate(data["runtimes"]):
-                rt_type = runtime.get("type", "unknown")
-                if "type" in runtime:
-                    if rt_type in valid_runtime_types:
-                        self.passed.append(f"{plugin_filename} runtime[{i}] type '{rt_type}' is valid")
-                    else:
-                        self.warnings.append(
-                            f"{plugin_filename} runtime[{i}] has unknown type: {rt_type}"
-                        )
+        for i, runtime in enumerate(data.get("runtimes", [])):
+            rt_type = runtime.get("type", "unknown")
+            if "type" in runtime:
+                if rt_type in valid_runtime_types:
+                    self.passed.append(f"{plugin_filename} runtime[{i}] type '{rt_type}' is valid")
                 else:
-                    self.errors.append(f"{plugin_filename} runtime[{i}] missing type")
+                    self.warnings.append(
+                        f"{plugin_filename} runtime[{i}] has unknown type: {rt_type}"
+                    )
+            else:
+                self.errors.append(f"{plugin_filename} runtime[{i}] missing type")
 
-                if "spec" in runtime and "url" in runtime["spec"]:
-                    self.passed.append(f"{plugin_filename} runtime[{i}] has spec.url")
-                elif rt_type == "OpenApi":
-                    self.warnings.append(f"{plugin_filename} runtime[{i}] missing spec.url")
+            spec = runtime.get("spec", {}) or {}
+            if rt_type == "RemoteMCPServer":
+                self._validate_mcp_runtime(plugin_filename, i, runtime)
+            elif "url" in spec:
+                self.passed.append(f"{plugin_filename} runtime[{i}] has spec.url")
+            elif rt_type == "OpenApi":
+                self.warnings.append(f"{plugin_filename} runtime[{i}] missing spec.url")
 
-        # Cross-check functions vs run_for_functions
+        # Cross-check functions vs run_for_functions (wildcards such as "*" are allowed)
         func_names = {f["name"] for f in data.get("functions", []) if "name" in f}
-        runtime_funcs: set[str] = set()
+        patterns: set[str] = set()
         for rt in data.get("runtimes", []):
-            runtime_funcs.update(rt.get("run_for_functions", []))
+            patterns.update(rt.get("run_for_functions", []))
+        wildcards = {p for p in patterns if any(c in p for c in "*?[")}
+        literals = patterns - wildcards
 
-        orphaned = func_names - runtime_funcs
+        orphaned = {
+            f for f in func_names
+            if f not in literals and not any(fnmatch.fnmatchcase(f, w) for w in wildcards)
+        }
         if orphaned:
             self.errors.append(
                 f"{plugin_filename} functions not in any run_for_functions: {sorted(orphaned)}"
@@ -862,15 +1238,77 @@ class AppPackageValidator:
         elif func_names:
             self.passed.append(f"{plugin_filename} all functions are in run_for_functions")
 
-        extra = runtime_funcs - func_names
+        extra = literals - func_names
         if extra:
             self.errors.append(
                 f"{plugin_filename} run_for_functions references undefined functions: {sorted(extra)}"
             )
-        elif runtime_funcs:
+        elif literals:
             self.passed.append(
                 f"{plugin_filename} all run_for_functions entries have matching function definitions"
             )
+        if wildcards and not func_names:
+            self.passed.append(
+                f"{plugin_filename} uses dynamic tool discovery (functions: [], "
+                f"run_for_functions: {sorted(wildcards)})"
+            )
+
+    def _validate_mcp_runtime(self, plugin_filename: str, i: int, runtime: dict):
+        """Validate a RemoteMCPServer runtime (plugin manifest v2.4)."""
+        where = f"{plugin_filename} runtime[{i}] (RemoteMCPServer)"
+        spec = runtime.get("spec", {}) or {}
+        url = spec.get("url", "")
+        if not url:
+            self.errors.append(f"{where} missing required spec.url")
+        elif not _is_absolute_url(url):
+            self.errors.append(f"{where} spec.url '{url}' must be an absolute URL to the MCP server")
+        elif not url.lower().startswith("https://"):
+            self.warnings.append(f"{where} spec.url '{url}' is not https")
+        else:
+            self.passed.append(f"{where} has absolute spec.url")
+
+        if "auth" not in runtime:
+            self.warnings.append(
+                f"{where} has no 'auth' — the v2.4 runtime table marks it required; "
+                f"add {{\"type\": \"None\"}} if the server is unauthenticated"
+            )
+
+        desc = spec.get("mcp_tool_description")
+        if desc is None:
+            if "*" not in runtime.get("run_for_functions", []):
+                self.warnings.append(
+                    f"{where} has no mcp_tool_description (dynamic discovery) — pair it with "
+                    f"\"functions\": [] and \"run_for_functions\": [\"*\"]"
+                )
+            return
+        has_file, has_tools = "file" in desc, "tools" in desc
+        if has_file == has_tools:
+            self.errors.append(f"{where} mcp_tool_description needs exactly one of 'file' or 'tools'")
+            return
+        if has_file:
+            tool_path = self.package_path / desc["file"]
+            if not tool_path.exists():
+                self.errors.append(f"{where} mcp_tool_description.file missing: {desc['file']}")
+                return
+            tools_doc = self._load_json(tool_path)
+            tools = tools_doc.get("tools", []) if isinstance(tools_doc, dict) else []
+            self.passed.append(f"{where} references existing tool file: {desc['file']}")
+        else:
+            tools = desc["tools"]
+        for j, tool in enumerate(tools):
+            missing = [k for k in ("name", "description", "inputSchema") if k not in tool]
+            if missing:
+                self.errors.append(f"{where} tool[{j}] missing {missing}")
+        if tools and all(all(k in t for k in ("name", "description", "inputSchema")) for t in tools):
+            self.passed.append(f"{where} declares {len(tools)} MCP tool(s)")
+
+    @staticmethod
+    def _openapi_spec_file(runtime: dict) -> str:
+        """Return the local OpenAPI file for an OpenApi runtime, or '' for other runtimes."""
+        if runtime.get("type", "OpenApi") != "OpenApi":
+            return ""
+        url = (runtime.get("spec", {}) or {}).get("url", "")
+        return "" if _is_absolute_url(url) else url
 
     def _validate_security_info(self):
         """Validate security_info.data_handling on apiPlugin functions.
@@ -903,7 +1341,7 @@ class AppPackageValidator:
         # Build a set of consequential operationIds from referenced apiDefinition(s)
         consequential_ops: set[str] = set()
         for rt in plugin_data.get("runtimes", []):
-            api_file = rt.get("spec", {}).get("url", "")
+            api_file = self._openapi_spec_file(rt)
             api_path = self.package_path / api_file if api_file else None
             if api_path and api_path.exists():
                 api_data = self._load_json(api_path)
@@ -986,7 +1424,7 @@ class AppPackageValidator:
                         pdata = self._load_json(plugin_path)
                         if pdata and "runtimes" in pdata:
                             for rt in pdata["runtimes"]:
-                                spec_url = rt.get("spec", {}).get("url", "")
+                                spec_url = self._openapi_spec_file(rt)
                                 if spec_url:
                                     api_def_files.add(spec_url)
 
@@ -1054,7 +1492,7 @@ class AppPackageValidator:
                     op_id = method_obj.get("operationId", "unknown")
                     if "x-openai-isConsequential" not in method_obj:
                         self.warnings.append(
-                            f"apiDefinition.json {method.upper()} {path_name} ({op_id}) "
+                            f"{filename} {method.upper()} {path_name} ({op_id}) "
                             f"missing x-openai-isConsequential"
                         )
 
@@ -1127,7 +1565,7 @@ class AppPackageValidator:
             data = self._load_json(plugin_path)
             if data and "runtimes" in data:
                 for runtime in data["runtimes"]:
-                    if "spec" in runtime and "url" in runtime["spec"]:
+                    if self._openapi_spec_file(runtime):
                         spec_path = self.package_path / runtime["spec"]["url"]
                         if spec_path.exists():
                             self.passed.append(
@@ -1156,7 +1594,7 @@ class AppPackageValidator:
                         pdata = self._load_json(ppath)
                         if pdata and "runtimes" in pdata:
                             for rt in pdata["runtimes"]:
-                                api_file = rt.get("spec", {}).get("url", "")
+                                api_file = self._openapi_spec_file(rt)
                                 if api_file and (self.package_path / api_file).exists():
                                     plugin_pairs.append((pfile, api_file))
 
@@ -1285,6 +1723,13 @@ class AppPackageValidator:
 
 
 def main():
+    # Windows consoles default to a legacy code page; keep em dashes and arrows readable
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     if len(sys.argv) > 1:
         package_path = sys.argv[1]
     else:
